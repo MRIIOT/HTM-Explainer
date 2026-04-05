@@ -1,0 +1,3045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How HTM Learns to Predict CNC Machine Behavior</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Outfit:wght@200;300;400;600;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0c0f;
+  --bg2: #13131a;
+  --bg3: #1a1a24;
+  --text: #c8c8d4;
+  --text-dim: #6e6e82;
+  --text-bright: #eeeef4;
+  --accent: #3bf0a0;
+  --accent2: #2ad4ff;
+  --warn: #ff6b4a;
+  --yellow: #ffd44a;
+  --purple: #a87bff;
+  --border: #2a2a3a;
+  --glow: rgba(59, 240, 160, 0.08);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+::selection { background: var(--accent); color: var(--bg); }
+
+/* --- HERO --- */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 4rem 2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 600px 400px at 30% 40%, rgba(59,240,160,0.06), transparent),
+    radial-gradient(ellipse 500px 500px at 70% 60%, rgba(42,212,255,0.04), transparent);
+}
+
+.hero-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 1.5rem;
+  opacity: 0;
+  animation: fadeUp 0.8s 0.2s forwards;
+}
+
+.hero h1 {
+  font-size: clamp(2.4rem, 6vw, 4.5rem);
+  font-weight: 800;
+  color: var(--text-bright);
+  line-height: 1.15;
+  max-width: 800px;
+  opacity: 0;
+  animation: fadeUp 0.8s 0.4s forwards;
+}
+
+.hero h1 span { color: var(--accent); }
+
+.hero-sub {
+  font-size: 1.15rem;
+  color: var(--text-dim);
+  max-width: 540px;
+  margin-top: 1.5rem;
+  font-weight: 300;
+  opacity: 0;
+  animation: fadeUp 0.8s 0.6s forwards;
+}
+
+.hero-scroll {
+  margin-top: 3rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  letter-spacing: 0.2em;
+  opacity: 0;
+  animation: fadeUp 0.8s 0.8s forwards, float 3s 1.6s infinite;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* --- LAYOUT --- */
+.flow {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+section {
+  padding: 6rem 0;
+  border-top: 1px solid var(--border);
+}
+
+section:first-of-type { border-top: none; }
+
+/* --- STAGE HEADERS --- */
+.stage-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.stage-num::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--accent), transparent);
+  opacity: 0.3;
+}
+
+h2 {
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 800;
+  color: var(--text-bright);
+  margin-bottom: 1.5rem;
+  line-height: 1.2;
+}
+
+h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-bright);
+  margin: 2.5rem 0 0.8rem;
+}
+
+p { margin-bottom: 1.2rem; }
+
+/* --- PARAM CARDS --- */
+.param-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 2rem 0;
+}
+
+.param {
+  background: var(--bg2);
+  padding: 1rem 1.2rem;
+  cursor: default;
+  transition: background 0.2s;
+  position: relative;
+}
+
+.param:hover { background: var(--bg3); }
+
+.param-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-bottom: 0.3rem;
+}
+
+.param-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.param-desc {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 0.4rem;
+  line-height: 1.4;
+}
+
+/* --- CALLOUT --- */
+.callout {
+  border-left: 3px solid var(--accent);
+  background: var(--glow);
+  padding: 1.2rem 1.5rem;
+  border-radius: 0 6px 6px 0;
+  margin: 2rem 0;
+  font-size: 0.92rem;
+}
+
+.callout.warn { border-color: var(--warn); background: rgba(255,107,74,0.06); }
+.callout.info { border-color: var(--accent2); background: rgba(42,212,255,0.06); }
+
+.callout-title {
+  font-weight: 600;
+  color: var(--text-bright);
+  margin-bottom: 0.3rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* --- CANVAS DEMOS --- */
+.demo-container {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 2rem 0;
+}
+
+.demo-header {
+  padding: 0.8rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.demo-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.demo-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.demo-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  padding: 0.3rem 0.7rem;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.demo-btn:hover { color: var(--accent); border-color: var(--accent); }
+.demo-btn.active { color: var(--accent); border-color: var(--accent); background: rgba(59,240,160,0.08); }
+
+canvas.demo {
+  width: 100%;
+  height: 120px;
+  display: block;
+}
+
+canvas.demo-tall { height: 200px; }
+
+/* --- CODE --- */
+code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82em;
+  background: var(--bg3);
+  padding: 0.15em 0.45em;
+  border-radius: 3px;
+  color: var(--accent2);
+}
+
+/* --- PIPELINE VIS --- */
+.pipeline {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 3rem 0;
+  overflow-x: auto;
+  padding: 1rem 0;
+}
+
+.pipe-stage {
+  flex-shrink: 0;
+  text-align: center;
+  padding: 1rem 1.2rem;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 110px;
+  transition: all 0.3s;
+}
+
+.pipe-stage:hover { border-color: var(--accent); transform: translateY(-2px); }
+
+.pipe-stage-icon {
+  font-size: 1.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.pipe-stage-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pipe-arrow {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 1.2rem;
+  padding: 0 0.3rem;
+  opacity: 0.4;
+}
+
+/* --- FOOTER --- */
+.footer {
+  text-align: center;
+  padding: 4rem 2rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* --- RESPONSIVE --- */
+@media (max-width: 600px) {
+  .param-grid { grid-template-columns: 1fr; }
+  .pipeline { flex-wrap: wrap; justify-content: center; }
+  .pipe-arrow { transform: rotate(90deg); padding: 0.3rem 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-label">An Interactive Explainer</div>
+  <h1>How a <span>Brain-Inspired Algorithm</span> Learns to Predict CNC Machine Behavior</h1>
+  <p class="hero-sub">Walk through each stage of Hierarchical Temporal Memory &mdash; from raw sensor readings to anomaly detection &mdash; and understand every tunable parameter along the way.</p>
+  <div class="hero-scroll">scroll to begin</div>
+</div>
+
+<div class="flow">
+
+<!-- OVERVIEW -->
+<section>
+  <div class="stage-num">The Big Picture</div>
+  <h2>What Are We Building?</h2>
+  <p>A CNC machine cuts metal. While cutting, sensors measure things like <strong>axis load</strong> (how hard the motor is working), <strong>temperature</strong>, <strong>spindle speed</strong>, and <strong>feedrate</strong>. These numbers arrive every 5 seconds.</p>
+  <p>We want a system that learns what "normal" looks like for this machine, and alerts us when something is "abnormal" &mdash; like a worn tool, a bearing failure, or a crash about to happen.</p>
+  <p>Instead of programming rules like "alert if load > 80%", we use an algorithm inspired by how the human brain works. It <strong>learns patterns from experience</strong> and gets surprised when something new happens. That surprise is the anomaly signal.</p>
+
+  <div class="pipeline">
+    <div class="pipe-stage"><div class="pipe-stage-icon">&#9881;</div><div class="pipe-stage-name">Raw Sensor</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-stage"><div class="pipe-stage-icon">&#9638;</div><div class="pipe-stage-name">Normalize</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-stage"><div class="pipe-stage-icon">&#9783;</div><div class="pipe-stage-name">Encoder</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-stage"><div class="pipe-stage-icon">&#9878;</div><div class="pipe-stage-name">Spatial Pooler</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-stage"><div class="pipe-stage-icon">&#9881;</div><div class="pipe-stage-name">Temporal Memory</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-stage"><div class="pipe-stage-icon">&#9888;</div><div class="pipe-stage-name">Anomaly Score</div></div>
+    <div class="pipe-arrow">&rarr;</div>
+    <div class="pipe-stage"><div class="pipe-stage-icon">&#10003;</div><div class="pipe-stage-name">Likelihood</div></div>
+  </div>
+
+  <p>Let's walk through each stage. We'll use a real config file for the <strong>XM axis load</strong> sensor on a Fanuc CNC machine.</p>
+</section>
+
+<!-- STAGE 1: NORMALIZATION -->
+<section>
+  <div class="stage-num">Stage 1</div>
+  <h2>Normalization</h2>
+  <p>The raw sensor reads something like <code>30.27%</code> load. But the algorithm needs a number between 0 and 1. So we normalize:</p>
+  <p style="text-align:center; font-size: 1.3rem; color: var(--text-bright); margin: 1.5rem 0;"><code>normalized = (30.27 - 0) / (100 - 0) = <strong style="color:var(--accent)">0.3027</strong></code></p>
+  <p>The normalization range (0 to 100 for load) is configured in <code>mtc2anomaly</code>. If the range is wrong &mdash; say you set max to 50 but the load sometimes hits 80 &mdash; values get clipped and information is lost.</p>
+
+  <div class="callout">
+    <div class="callout-title">Why it matters</div>
+    The normalized value determines which encoder bucket the input falls into. Wrong normalization = wrong encoding = wrong predictions = false anomalies.
+  </div>
+</section>
+
+<!-- STAGE 2: ENCODER -->
+<section>
+  <div class="stage-num">Stage 2</div>
+  <h2>The Encoder</h2>
+  <p>The encoder converts the normalized number into a <strong>Sparse Distributed Representation</strong> (SDR) &mdash; a long row of bits (0s and 1s) where only a few bits are turned ON.</p>
+  <p>Think of it like a ruler with 256 marks. The value 0.3027 lights up 41 consecutive marks centered around position 65. If the value changes to 0.31, the lit-up window slides one mark to the right.</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">SDR Encoder &mdash; drag to change value</span>
+      <span class="demo-title" id="enc-val" style="color:var(--accent)">0.3027</span>
+    </div>
+    <canvas class="demo" id="encoder-demo"></canvas>
+  </div>
+
+  <div class="param-grid">
+    <div class="param">
+      <div class="param-name">inputBits</div>
+      <div class="param-val">256</div>
+      <div class="param-desc">Total bits in the SDR. More bits = finer resolution, but more sensitive to noise.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">w</div>
+      <div class="param-val">41</div>
+      <div class="param-desc">How many bits are ON. Wider = more overlap between nearby values = less sensitive to tiny changes.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">minVal / maxVal</div>
+      <div class="param-val">0 &mdash; 1</div>
+      <div class="param-desc">The encoder's input range. Values outside get clipped.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">clipInput</div>
+      <div class="param-val">true</div>
+      <div class="param-desc">Clamp out-of-range values instead of throwing an error.</div>
+    </div>
+  </div>
+
+  <h3>Sparsity &mdash; Why Only 41 of 256 Bits?</h3>
+  <p>The SDR is <strong>sparse</strong> &mdash; only 16% of bits are ON (<code>41 / 256</code>). This isn't arbitrary. Sparsity gives HTM two superpowers:</p>
+  <p><strong>1. Massive storage capacity.</strong> The number of unique patterns you can make by choosing 41 bits out of 256 is astronomically large &mdash; roughly 10<sup>48</sup>. Every input value gets its own unique pattern with essentially zero chance of collision.</p>
+  <p><strong>2. Noise tolerance.</strong> Two SDRs are considered "matching" if enough bits overlap (the <code>activationThreshold</code>). With 41 active bits, even if noise corrupts 10 of them, the remaining 31 still identify the pattern. A dense representation (say 200 of 256 ON) would be fragile &mdash; most patterns would look the same.</p>
+  <p>The original Numenta research targets ~2% sparsity (<code>w/n</code>). Our encoder is at 16% (<code>41/256</code>) which is denser than the 2% guideline, but we chose wider <code>w</code> deliberately to increase overlap between adjacent values. The SP output restores sparsity: <code>10 active / 256 columns = 3.9%</code>, closer to the 2% target.</p>
+
+  <div class="callout info">
+    <div class="callout-title">The two levels of sparsity</div>
+    <strong>Encoder sparsity</strong> (<code>w / inputBits</code> = 41/256 = 16%) controls how much adjacent values overlap. Wider <code>w</code> = more overlap = less sensitivity to jitter.<br><br>
+    <strong>SP output sparsity</strong> (<code>numActiveColumnsPerInhArea / numColumns</code> = 10/256 = 3.9%) controls the final representation that the TM learns from. This is the sparsity that matters for memory capacity and noise tolerance.
+  </div>
+
+  <h3>Resolution</h3>
+  <p>With 256 bits and w=41, there are <code>256 - 41 = 215</code> possible bucket positions. Each bucket covers <code>1.0 / 215 = 0.00465</code> of the input range. For load (0-100%), that's <strong>0.47% per bucket</strong>.</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Resolution &mdash; what the encoder sees vs ignores</span>
+    </div>
+    <canvas class="demo" id="resolution-demo" style="height:340px"></canvas>
+  </div>
+
+  <p>A load change from 30.0% to 30.4% stays in the same bucket &mdash; invisible to the system. A change from 30% to 35% crosses ~10 buckets &mdash; clearly visible. Try it yourself &mdash; drag the two values below and watch the overlap:</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">SDR Overlap &mdash; drag either value to compare</span>
+      <span class="demo-title" id="overlap-info" style="color:var(--accent)"></span>
+    </div>
+    <canvas class="demo" id="overlap-demo" style="height:200px"></canvas>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-title">The w=41 trick</div>
+    With w=41, two values one bucket apart share 40 of 41 active bits (97% overlap). The Spatial Pooler sees nearly identical input and activates the same columns. This makes the system tolerant to normal cutting load jitter.
+  </div>
+</section>
+
+<!-- STAGE 3: SPATIAL POOLER -->
+<section>
+  <div class="stage-num">Stage 3</div>
+  <h2>The Spatial Pooler</h2>
+  <p>The encoder outputs 256 bits (41 are ON, 215 are OFF). Now we need to figure out which <strong>columns</strong> should respond to this pattern. The Spatial Pooler does this through a competition.</p>
+
+  <h3>Step 1: Wiring &mdash; Each Column Gets Random Connections</h3>
+  <p>At startup, each of the 256 columns gets randomly wired to about half of the 256 input bits (<code>potentialPct: 0.5</code> = ~128 connections per column). This wiring is random and permanent &mdash; column 42 might connect to bits [3, 7, 15, 22, 41, 55, 89, ...] while column 200 connects to a completely different set.</p>
+  <p>Each connection has a <strong>permanence</strong> value &mdash; a number between 0 and 1 representing how strong that connection is. Connections above <code>0.25</code> (<code>synPermConnected</code>) are "connected" and actually count. Below that, they exist but don't contribute.</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Random Wiring &mdash; each column connects to different input bits</span>
+    </div>
+    <canvas class="demo" id="sp-wiring" style="height:420px"></canvas>
+  </div>
+
+  <h3>Step 2: Overlap &mdash; Counting Matches</h3>
+  <p>When the encoder lights up 41 bits, each column counts: <strong>"How many of my connected wires touch a lit-up bit?"</strong> This count is called the <strong>overlap score</strong>.</p>
+  <p>Say column A has 128 wires, and 14 of them happen to touch the 41 active bits. Column A's overlap = 14. Column C might only have 6 wires touching active bits. Column A has a stronger response to this input.</p>
+
+  <h3>Step 3: Competition &mdash; Top 10 Win</h3>
+  <p>All 256 columns compare their overlap scores. The <strong>top 10</strong> (<code>numActiveColumnsPerInhArea: 10</code>) win. The other 246 are suppressed. This winner-takes-all competition is called <strong>inhibition</strong> &mdash; the strong columns "inhibit" the weaker ones.</p>
+  <p>With <code>globalInhibition: true</code>, every column competes against every other column. (The alternative, local inhibition, only competes against neighbors &mdash; but since our column positions are meaningless, global makes sense.)</p>
+
+  <h3>Step 4: Why These Specific 10?</h3>
+  <p>The 10 winners are the columns whose random wiring happens to overlap the most with the current 41 active bits. Because the wiring is random and initialized from <code>randomSeed: 42</code>, the same encoder pattern will always activate the same 10 columns (at least initially, before learning changes things).</p>
+  <p>Different encoder patterns (different load values) light up different bits, which means different columns win. <strong>That's how the SP maps input values to column representations.</strong> Try it &mdash; drag the slider to change load and watch which columns win:</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">SP Column Mapping &mdash; drag to change load</span>
+      <span class="demo-title" id="sp-map-info" style="color:var(--accent)">30.0%</span>
+    </div>
+    <canvas class="demo" id="sp-mapping-demo" style="height:380px"></canvas>
+  </div>
+
+  <p>Notice how nearby values (30.0% vs 30.2%) produce the <strong>same columns</strong>, while distant values (30% vs 50%) produce mostly <strong>different columns</strong>. This is the SP translating encoder overlap into column stability.</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Spatial Pooler &mdash; 10 columns compete by overlap score</span>
+    </div>
+    <canvas class="demo demo-tall" id="sp-demo"></canvas>
+  </div>
+
+  <h3>Step 5: Learning &mdash; Strengthening the Winners</h3>
+  <p>After the 10 winners are chosen, the SP adjusts their connection strengths. Only the winning columns learn &mdash; the 246 losers are untouched:</p>
+  <ul style="margin: 1rem 0 1rem 1.5rem; color: var(--text);">
+    <li>Connections to <strong>active</strong> input bits (the 41 that were ON) get <strong>stronger</strong>: permanence += <code>0.15</code></li>
+    <li>Connections to <strong>inactive</strong> input bits (the 215 that were OFF) get <strong>weaker</strong>: permanence -= <code>0.005</code></li>
+  </ul>
+  <p>Click "Learn" below to watch a winning column's connections change over repeated cycles. Notice how connections to active bits (green) get stronger while connections to inactive bits (grey) decay. After enough cycles, the column becomes a specialist &mdash; strongly wired to its input region and weakly wired to everything else.</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">SP Learning &mdash; one column's permanences over cycles</span>
+      <div class="demo-controls">
+        <button class="demo-btn" id="sp-learn-btn">Learn (+1 cycle)</button>
+        <button class="demo-btn" id="sp-learn10-btn">Learn +10</button>
+        <button class="demo-btn" id="sp-learn-reset">Reset</button>
+      </div>
+    </div>
+    <canvas class="demo" id="sp-learn-demo" style="height:300px"></canvas>
+  </div>
+
+  <p>Over many cycles of seeing the same input, the winning columns develop <strong>very strong connections</strong> to that input's bit pattern. They become "specialists" for that value range. Column 42 might become the go-to column for loads around 28-32% because its permanences for those encoder bits are near 1.0.</p>
+
+  <div class="callout">
+    <div class="callout-title">Why 10 columns and not 1?</div>
+    If only 1 column represented each value, a tiny input change could activate a completely different column &mdash; the TM would see a totally new pattern and burst. With 10 columns, a small value change might swap 1-2 columns while the other 8-9 stay the same. The TM's predictions survive because most of the pattern is unchanged.
+  </div>
+
+  <h3>SP Output Sparsity &mdash; The 2% Rule</h3>
+  <p>The SP output is also sparse: <code>10 active / 256 total = 3.9%</code>. The Numenta research recommends ~2% sparsity for optimal memory capacity. Here's why sparsity matters at the SP level:</p>
+  <p>The Temporal Memory downstream needs to learn "when I see column pattern A, predict column pattern B next." If 200 of 256 columns were active (dense), almost every pair of timesteps would share most of the same columns &mdash; the TM couldn't tell one pattern from another. With only 10 active, different input values produce clearly distinct column patterns.</p>
+  <p>The tradeoff: fewer active columns = more distinct patterns but less overlap between adjacent values. More active columns = more overlap (better predictions through value changes) but less distinct patterns. Our choice of 10 balances both.</p>
+  <p>Over time, each column becomes a "specialist" for a particular input region. Column 42 might respond best to loads around 28-32%. Column 198 might respond best to 45-50%.</p>
+
+  <div class="param-grid">
+    <div class="param">
+      <div class="param-name">numColumns</div>
+      <div class="param-val">256</div>
+      <div class="param-desc">Total columns available. Same as inputBits.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">numActiveColumnsPerInhArea</div>
+      <div class="param-val">10</div>
+      <div class="param-desc">How many columns win. More = more overlap between timesteps = better predictions.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">potentialPct</div>
+      <div class="param-val">0.5</div>
+      <div class="param-desc">Each column randomly connects to 50% of input bits.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">synPermConnected</div>
+      <div class="param-val">0.25</div>
+      <div class="param-desc">Connection strength threshold. Above = "connected" (counts). Below = "potential" (exists but doesn't count yet).</div>
+    </div>
+    <div class="param">
+      <div class="param-name">synPermActiveInc</div>
+      <div class="param-val">0.15</div>
+      <div class="param-desc">How much to strengthen a connection each cycle.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">synPermInactiveDec</div>
+      <div class="param-val">0.005</div>
+      <div class="param-desc">How much to weaken an unused connection each cycle.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">globalInhibition</div>
+      <div class="param-val">true</div>
+      <div class="param-desc">All columns compete against each other (not just neighbors).</div>
+    </div>
+    <div class="param">
+      <div class="param-name">maxBoost</div>
+      <div class="param-val">1.2</div>
+      <div class="param-desc">Underactive columns get a slight boost to stay competitive.</div>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <div class="callout-title">The SP never stops learning</div>
+    Every cycle, the SP adjusts its connections &mdash; even if it's seen the same input 10,000 times. This can cause "drift" where columns slowly change for the same input. The anomaly likelihood layer compensates for this.
+  </div>
+</section>
+
+<!-- STAGE 4: TEMPORAL MEMORY -->
+<section>
+  <div class="stage-num">Stage 4</div>
+  <h2>Temporal Memory</h2>
+  <p>This is where learning happens. The Temporal Memory (TM) is the brain of the system. It asks: <strong>"Given what just happened, what will happen next?"</strong></p>
+  <p>Each of the 256 columns has <strong>16 cells</strong> stacked vertically. That's 4,096 cells total. Each cell can store up to 64 prediction rules called <strong>segments</strong>. Each segment has connections called <strong>synapses</strong> that link to other cells.</p>
+
+  <h3>The Structure: Columns, Cells, Segments, Synapses</h3>
+  <p>Think of it as a building. Each <strong>column</strong> is a floor in the building. Each floor has 16 <strong>rooms</strong> (cells). Each room has a whiteboard with up to 64 <strong>notes</strong> (segments). Each note says something like: "If rooms 42, 89, and 201 were active last timestep, predict that I'll be active next."</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Anatomy of the Temporal Memory</span>
+    </div>
+    <canvas class="demo" id="tm-anatomy" style="height:500px"></canvas>
+  </div>
+
+  <h3>Step 1: The SP Activates Columns</h3>
+  <p>The SP picks 10 active columns. Now the TM needs to decide: for each active column, <strong>which of the 16 cells should fire?</strong></p>
+
+  <h3>Step 2: Check Predictions</h3>
+  <p>For each active column, the TM asks: <strong>"Did any cell in this column predict this would happen?"</strong></p>
+  <p>A cell "predicts" if it has a <strong>segment</strong> (a rule) where enough synapses connect to cells that were active in the <strong>previous</strong> timestep. "Enough" means at least <code>activationThreshold: 4</code> synapses match.</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Predicted vs Bursting &mdash; what happens in each column</span>
+    </div>
+    <canvas class="demo" id="tm-predict" style="height:280px"></canvas>
+  </div>
+
+  <p>Two outcomes:</p>
+  <ul style="margin: 1rem 0 1rem 1.5rem; color: var(--text);">
+    <li><span style="color:var(--accent)">&#9632;</span> <strong>Predicted:</strong> A cell had a matching segment. Only that cell activates. Quiet, controlled. The TM expected this. Anomaly score contribution: <strong>0</strong>.</li>
+    <li><span style="color:var(--warn)">&#9632;</span> <strong>Bursting:</strong> NO cell predicted this column. All 16 cells fire at once &mdash; the column "screams" because it's surprised. One cell is chosen as the <strong>winner</strong> to learn from this experience. Anomaly score contribution: <strong>1/10 = 0.1</strong>.</li>
+  </ul>
+
+  <h3>Step 3: Learning &mdash; Building New Rules</h3>
+  <p>Learning happens in two cases:</p>
+
+  <p><strong>Case A: Column bursted (wasn't predicted)</strong></p>
+  <p>The TM picks a winner cell (the one with the fewest existing segments) and creates a brand new <strong>segment</strong> on it. This segment grows <strong>synapses</strong> that connect to the <strong>previous timestep's winner cells</strong>.</p>
+  <p>It's saying: <em>"The cells that were active before this happened? Remember them. Next time I see them, predict me."</em></p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Learning after a burst &mdash; new segment created</span>
+    </div>
+    <canvas class="demo" id="tm-learn-burst" style="height:340px"></canvas>
+  </div>
+
+  <p><strong>Case B: Column was correctly predicted</strong></p>
+  <p>The segment that successfully predicted gets <strong>reinforced</strong>. Synapses to cells that were active get stronger (+0.10). Synapses to cells that were NOT active get weaker (-0.05). The rule becomes more confident.</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Reinforcement &mdash; strengthening correct predictions</span>
+    </div>
+    <canvas class="demo" id="tm-learn-reinforce" style="height:320px"></canvas>
+  </div>
+
+  <h3>Step 4: Punishment &mdash; Wrong Predictions Weaken</h3>
+  <p>Sometimes the TM predicts a column will be active, but the SP doesn't select it. How? The TM and SP have different jobs:</p>
+  <ul style="margin: 1rem 0 1rem 1.5rem; color: var(--text);">
+    <li>The <strong>TM predicts</strong>: "based on what just happened, I think column 100 will be active next"</li>
+    <li>The <strong>SP decides</strong>: "based on the actual encoder input, the top 10 columns are 12, 45, 67, 89, <strong>103</strong>"</li>
+  </ul>
+  <p>Column 100 was predicted but the SP picked column 103 instead &mdash; the input value changed just enough that a different column won the competition. The TM's prediction was wrong because the value moved.</p>
+  <p>When this happens, the segments that incorrectly predicted column 100 get gently weakened by <code>predictedSegmentDecrement: 0.001</code>. This is very slow &mdash; takes hundreds of wrong predictions to destroy a connection. The system forgets slowly, giving those segments a chance to be right next time the value returns to that range.</p>
+
+  <h3>Step 5: Permanence &mdash; The Strength of a Connection</h3>
+  <p>Every synapse has a <strong>permanence</strong> &mdash; a number between 0 and 1 that represents how strong the connection is.</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Permanence lifecycle of a synapse</span>
+    </div>
+    <canvas class="demo" id="tm-permanence" style="height:160px"></canvas>
+  </div>
+
+  <ul style="margin: 1rem 0 1rem 1.5rem; color: var(--text);">
+    <li>New synapses start at <code>0.35</code> &mdash; already above the connected threshold (<code>0.25</code>), so they work immediately</li>
+    <li>Each correct prediction: <strong>+0.10</strong> (strengthens)</li>
+    <li>Each wrong prediction: <strong>-0.05</strong> (weakens, but only half as fast)</li>
+    <li>If permanence drops below ~0: synapse dies and is removed</li>
+    <li>If ALL synapses on a segment die: the entire segment (rule) is destroyed</li>
+  </ul>
+  <p>The asymmetry matters: building is 2x faster than tearing down. The network biases toward <strong>retaining</strong> learned connections.</p>
+
+  <h3>The Complete Prediction Cycle</h3>
+  <p>Putting it all together, here's what happens every 5 seconds when a new sensor reading arrives:</p>
+  <ol style="margin: 1rem 0 1rem 1.5rem; color: var(--text); line-height: 2;">
+    <li>Encoder converts value to 256-bit SDR (41 bits ON)</li>
+    <li>SP picks 10 winning columns</li>
+    <li>TM checks: were any cells in these columns predicting?</li>
+    <li>Predicted columns &rarr; only predicted cell activates</li>
+    <li>Unpredicted columns &rarr; all 16 cells burst, one winner learns</li>
+    <li>Winner cells grow synapses to previous timestep's winners</li>
+    <li>Correctly predicted segments get reinforced</li>
+    <li>Wrong predictions get slightly weakened</li>
+    <li>Anomaly score = (bursting columns) / (total active columns)</li>
+    <li>The predictions made NOW become the "previous predictions" for the NEXT timestep</li>
+  </ol>
+
+  <div class="param-grid">
+    <div class="param">
+      <div class="param-name">cellsPerColumn</div>
+      <div class="param-val">16</div>
+      <div class="param-desc">Cells stacked per column. More = more sequence contexts the value can participate in.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">activationThreshold</div>
+      <div class="param-val">4</div>
+      <div class="param-desc">Synapses needed for a segment to activate (trigger prediction). Must be less than active columns (10).</div>
+    </div>
+    <div class="param">
+      <div class="param-name">minThreshold</div>
+      <div class="param-val">3</div>
+      <div class="param-desc">Synapses needed for a segment to "almost match" (eligible for learning).</div>
+    </div>
+    <div class="param">
+      <div class="param-name">maxNewSynapseCount</div>
+      <div class="param-val">20</div>
+      <div class="param-desc">Max synapses grown per learning cycle.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">maxSegmentsPerCell</div>
+      <div class="param-val">64</div>
+      <div class="param-desc">Max prediction rules per cell. More = remembers more patterns before forgetting old ones.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">maxSynapsesPerSegment</div>
+      <div class="param-val">32</div>
+      <div class="param-desc">Max connections per rule.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">initialPermanence</div>
+      <div class="param-val">0.35</div>
+      <div class="param-desc">New synapses start above threshold (0.25) &mdash; immediately connected. Survives 2 wrong predictions.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">permanenceIncrement</div>
+      <div class="param-val">0.10</div>
+      <div class="param-desc">Strengthen correct predictions aggressively.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">permanenceDecrement</div>
+      <div class="param-val">0.05</div>
+      <div class="param-desc">Weaken wrong predictions gently. Half the increment = bias toward keeping connections.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">learningRadius</div>
+      <div class="param-val">-1</div>
+      <div class="param-desc">Unlimited. Any cell can connect to any other cell. (-1 = no distance restriction.)</div>
+    </div>
+    <div class="param">
+      <div class="param-name">predictedSegmentDecrement</div>
+      <div class="param-val">0.001</div>
+      <div class="param-desc">Very slow background decay on wrong predictions. Takes hundreds of cycles to weaken a connection.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">skipLearningAfterStableCount</div>
+      <div class="param-val">50</div>
+      <div class="param-desc">After 50 identical inputs in a row (~4 min), stop learning. Prevents wasting segment slots on idle patterns.</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-title">The critical rule</div>
+    <code>activationThreshold</code> must be <strong>less than</strong> <code>numActiveColumnsPerInhArea</code>. A segment can only grow synapses to previous winner cells (one per active column). If the threshold exceeds the number of active columns, segments can NEVER activate and the TM can NEVER predict. We learned this the hard way.
+  </div>
+</section>
+
+<!-- STAGE 5: ANOMALY SCORE -->
+<section>
+  <div class="stage-num">Stage 5</div>
+  <h2>Anomaly Score (Prediction Error)</h2>
+  <p>After the TM processes the input, we compare what was <strong>predicted</strong> with what actually <strong>happened</strong>. The formal equation from the Numenta research paper:</p>
+  <p style="text-align:center; font-size: 1.2rem; color: var(--text-bright); margin: 1.5rem 0; font-family: 'JetBrains Mono', monospace;">
+    s<sub>t</sub> = 1 &minus; (&pi;(x<sub>t-1</sub>) &middot; a(x<sub>t</sub>)) / |a(x<sub>t</sub>)|
+  </p>
+  <p>In plain English: take the prediction from the previous timestep (&pi;), compare it with the actual encoding this timestep (a), and measure how much they overlap. The dot product counts matching bits, divided by total active bits.</p>
+  <ul style="margin: 1rem 0 1rem 1.5rem; color: var(--text);">
+    <li><strong>s = 0.0</strong> = perfect overlap. Every active column was predicted. <span style="color:var(--accent)">Normal.</span></li>
+    <li><strong>s = 0.5</strong> = half the columns were unexpected. Something changed.</li>
+    <li><strong>s = 1.0</strong> = zero overlap. Complete surprise. <span style="color:var(--warn)">Highly anomalous.</span></li>
+  </ul>
+
+  <h3>Two Types of Anomalies</h3>
+  <p>Not all anomalies are the same. The Numenta research identifies two distinct types:</p>
+  <p><strong style="color: var(--warn);">Spatial anomalies</strong> &mdash; a value that's unusual on its own, regardless of context. Like axis load suddenly spiking to 90% when it's normally around 30%. Any detection method can catch these, even a simple threshold.</p>
+  <p><strong style="color: var(--purple);">Temporal anomalies</strong> &mdash; a value that's normal on its own but unusual <em>in this sequence</em>. Like load at 30% during what should be an active cutting cycle (where you'd expect 35-50%). The value isn't extreme &mdash; the <em>timing</em> is wrong. Only sequence-learning methods like HTM can catch these.</p>
+  <p>This is HTM's superpower. A simple threshold detector scores 0.00 on temporal anomalies in the Numenta benchmark. HTM scores 0.40. It detects subtle pattern changes &mdash; like a bearing vibration that slowly shifts days before failure &mdash; not just obvious spikes.</p>
+
+  <div class="callout">
+    <div class="callout-title">Why raw anomaly score isn't enough</div>
+    In noisy systems (like a CNC machine with mechanical vibration), the raw score spikes frequently during normal operation. A tiny input change can cause one SP column to swap, producing a score of 0.1 even though nothing is actually wrong. If we alerted on every spike, we'd drown in false alarms. That's why we need one more stage...
+  </div>
+
+  <div class="param-grid">
+    <div class="param">
+      <div class="param-name">anomalyThreshold</div>
+      <div class="param-val">0.75</div>
+      <div class="param-desc">Raw score threshold (only used if anomaly likelihood is disabled). Not recommended &mdash; too many false positives on noisy data.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">anomalyLearningPeriod</div>
+      <div class="param-val">500</div>
+      <div class="param-desc">First 500 timesteps (~42 min): ramp up scores gradually instead of slamming to 1.0. Smooths cold start.</div>
+    </div>
+  </div>
+</section>
+
+<!-- STAGE 6: ANOMALY LIKELIHOOD -->
+<section>
+  <div class="stage-num">Stage 6</div>
+  <h2>Anomaly Likelihood</h2>
+  <p>This is the most important stage. The Numenta research showed that using anomaly likelihood instead of raw scores improves detection accuracy by <strong>16.5 points</strong> on their benchmark (53.6 &rarr; 70.1). It's the difference between a noisy mess and a useful alert system.</p>
+
+  <h3>The Washing Machine Analogy</h3>
+  <p>Think of your washing machine. It vibrates during every cycle &mdash; that's normal.</p>
+  <ul style="margin: 1rem 0 1rem 1.5rem; color: var(--text);">
+    <li><strong>Prediction error</strong> asks: "Was this vibration what I expected?" A single big vibration might score high &mdash; but it could just be the spin cycle.</li>
+    <li><strong>Anomaly likelihood</strong> asks: "Is this vibration <em>unusual compared to how noisy this machine usually is</em>?" If the machine is always vibratey, one big vibration isn't noteworthy. But if the vibrations get consistently <em>different</em> from the past hour's baseline, something's wrong.</li>
+  </ul>
+  <p>The likelihood doesn't ask "is this value weird?" &mdash; it asks "is the <em>prediction error</em> weird?" This is a crucial distinction.</p>
+
+  <h3>The Deep Insight: Modeling Error, Not Data</h3>
+  <p>Here's the key idea from the Numenta paper that makes the whole system work:</p>
+  <div class="callout info">
+    <div class="callout-title">The anomaly likelihood models the distribution of ERRORS, not the distribution of data values</div>
+    It doesn't care what the load value is. It doesn't know if 30% is normal or abnormal. It only knows: "the prediction error is usually around 0.08 with a standard deviation of 0.03. Right now the error is 0.45. That's 12 standard deviations above normal. Something is very wrong."<br><br>
+    This is why the system works across completely different machines without tuning. The error distribution adapts automatically to whatever signal is being monitored.
+  </div>
+
+  <h3>The Math (from the Numenta paper)</h3>
+  <p>The likelihood calculation has four steps:</p>
+
+  <p><strong>Step 1: Rolling baseline</strong> &mdash; track the mean and variance of raw scores over a window of W samples:</p>
+  <p style="text-align:center; font-family: 'JetBrains Mono', monospace; color: var(--text-bright); margin: 0.8rem 0;">
+    &mu;<sub>t</sub> = &Sigma; s<sub>t-i</sub> / W &nbsp;&nbsp;&nbsp; (mean of last W scores)
+  </p>
+  <p style="text-align:center; font-family: 'JetBrains Mono', monospace; color: var(--text-bright); margin: 0.8rem 0;">
+    &sigma;&sup2;<sub>t</sub> = &Sigma; (s<sub>t-i</sub> &minus; &mu;<sub>t</sub>)&sup2; / (W-1) &nbsp;&nbsp;&nbsp; (variance)
+  </p>
+
+  <p><strong>Step 2: Short-term average</strong> &mdash; smooth the last W' raw scores to filter single-timestep spikes:</p>
+  <p style="text-align:center; font-family: 'JetBrains Mono', monospace; color: var(--text-bright); margin: 0.8rem 0;">
+    &mu;&#771;<sub>t</sub> = &Sigma; s<sub>t-i</sub> / W' &nbsp;&nbsp;&nbsp; (average of last W' scores)
+  </p>
+
+  <p><strong>Step 3: How unusual is the current error?</strong> &mdash; compute the z-score (how many standard deviations above the mean):</p>
+  <p style="text-align:center; font-family: 'JetBrains Mono', monospace; color: var(--text-bright); margin: 0.8rem 0;">
+    z = (&mu;&#771;<sub>t</sub> &minus; &mu;<sub>t</sub>) / &sigma;<sub>t</sub>
+  </p>
+
+  <p><strong>Step 4: Convert to probability</strong> &mdash; use the Gaussian Q-function (tail probability):</p>
+  <p style="text-align:center; font-family: 'JetBrains Mono', monospace; color: var(--text-bright); margin: 0.8rem 0;">
+    L<sub>t</sub> = 1 &minus; Q(z) &nbsp;&nbsp;&nbsp; (anomaly likelihood)
+  </p>
+  <p>L<sub>t</sub> close to 0 = the current error is within normal range. L<sub>t</sub> close to 1 = the current error is extremely unusual. We flag an anomaly when L<sub>t</sub> &ge; 1 &minus; &epsilon;.</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Anomaly Likelihood &mdash; interactive calculator</span>
+      <div class="demo-controls">
+        <button class="demo-btn" id="al-normal-btn">+ Normal</button>
+        <button class="demo-btn" id="al-spike-btn">+ Spike</button>
+        <button class="demo-btn" id="al-drift-btn">+ Drift (10)</button>
+        <button class="demo-btn" id="al-reset-btn">Reset</button>
+      </div>
+    </div>
+    <canvas class="demo" id="likelihood-demo" style="height:520px"></canvas>
+  </div>
+
+  <div class="callout">
+    <div class="callout-title">How to use this demo</div>
+    <strong>1. See normal operation:</strong> Click <code>+ Normal</code> several times. The blue bars stay low, the baseline (green dashed line) stays around 0.10, and the result says "NORMAL."<br><br>
+    <strong>2. Simulate an anomaly:</strong> Drag the slider to 0.5 or higher, then click <code>+ Spike</code>. Watch the yellow bar appear above the baseline, the z-score jump, the tail area on the Gaussian turn red, and the result flip to "ANOMALY DETECTED."<br><br>
+    <strong>3. See concept drift:</strong> Click <code>+ Drift (10)</code>. Ten gradually increasing scores are added. The baseline shifts upward as the window fills with higher scores &mdash; after enough drift, what was anomalous becomes the new normal.<br><br>
+    <strong>4. Reset and try again:</strong> Click <code>Reset</code> to start fresh with a clean baseline.
+  </div>
+
+  <h3>Why This Works on Noisy CNC Data</h3>
+  <p>A CNC machine's load signal is inherently noisy during cutting. The raw anomaly score might sit around 0.1-0.2 as the load oscillates. The likelihood calculator sees this:</p>
+  <ul style="margin: 1rem 0 1rem 1.5rem; color: var(--text);">
+    <li><strong>Normal cutting:</strong> raw scores averaging 0.12, std dev 0.05. A score of 0.15? z-score = 0.6. Likelihood = 0.27. <span style="color:var(--accent)">Not flagged.</span></li>
+    <li><strong>Tool wearing out:</strong> raw scores creeping to 0.35 over an hour. z-score = 4.6. Likelihood = 0.99999+. <span style="color:var(--warn)">Flagged!</span></li>
+    <li><strong>Bearing seizes:</strong> raw score jumps to 1.0. z-score = 17.6. Likelihood = 1.0. <span style="color:var(--warn)">Immediately flagged!</span></li>
+  </ul>
+  <p>The same threshold works for all three scenarios because the likelihood adapts to whatever the normal noise level is.</p>
+
+  <h3>Concept Drift: Adapting to Change</h3>
+  <p>When the machine switches to a new part program, the load profile changes. Raw scores spike as the TM encounters new patterns. But within a few minutes, the TM learns the new patterns and scores drop. The likelihood window eventually fills with the new baseline, and the system is recalibrated &mdash; no manual intervention needed.</p>
+  <p>This is called <strong>concept drift</strong> &mdash; the underlying statistics change over time. HTM handles it automatically because:</p>
+  <ol style="margin: 1rem 0 1rem 1.5rem; color: var(--text);">
+    <li>The TM continuously learns new patterns (never stops adapting)</li>
+    <li>The likelihood window is rolling (old scores drop out, new ones enter)</li>
+    <li>After the window fills with new-baseline scores, the old baseline is forgotten</li>
+  </ol>
+
+  <div class="param-grid">
+    <div class="param">
+      <div class="param-name">enableAnomalyLikelihood</div>
+      <div class="param-val">true</div>
+      <div class="param-desc">Must be on. Without it, every tiny score spike triggers an alert. The Numenta benchmark shows a 16.5-point improvement with likelihood enabled.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">anomalyWindowSize (W)</div>
+      <div class="param-val">20,000</div>
+      <div class="param-desc">Rolling window for baseline statistics. At 5s intervals = ~28 hours. The Numenta paper used 8,000 and noted it's "not sensitive to W as long as large enough." Larger = more stable baseline, slower to adapt after concept drift.</div>
+    </div>
+    <div class="param">
+      <div class="param-name">anomalyShortTermWindowSize (W')</div>
+      <div class="param-val">10</div>
+      <div class="param-desc">Smooths the last 10 raw scores before comparing to baseline. A single spike won't trigger &mdash; the spike must persist for ~50 seconds. Must be much smaller than W (W' &Lt;&Lt; W).</div>
+    </div>
+    <div class="param">
+      <div class="param-name">anomalyLikelihoodThreshold (&epsilon;)</div>
+      <div class="param-val">0.99999</div>
+      <div class="param-desc">Flag when L<sub>t</sub> &ge; 1 &minus; &epsilon; = 0.99999. The Numenta paper used &epsilon; = 10<sup>-5</sup> (same value!) and found it "works well across a large range of domains" without per-application tuning.</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-title">This is the real output</div>
+    Everything before this &mdash; the encoder, SP, TM, raw score &mdash; is internal machinery. The anomaly likelihood is what gets shown on dashboards, what triggers alerts, what operators see. If the likelihood is working, the system is working, even if internal metrics look messy. The Numenta paper's best-performing detector used these exact formulas.
+  </div>
+</section>
+
+<!-- MULTI-ENCODER -->
+<section>
+  <div class="stage-num">Multi-Signal</div>
+  <h2>Multi-Encoder: Monitoring Signals Together</h2>
+
+  <p>Everything so far describes monitoring <strong>one signal</strong> — like XM_load by itself. But a CNC machine has dozens of signals, and some anomalies only show up when you look at <strong>combinations</strong>.</p>
+
+  <h3>Why Monitor Signals Together?</h3>
+  <p>Imagine X-axis load is at 35% and spindle speed is at 6000 RPM. Both are individually normal. But if you've <em>never seen</em> 35% load at 6000 RPM before (usually it's 35% at 3000 RPM), something might be wrong — wrong tool, wrong feed rate, or a programming error.</p>
+  <p>An individual HTM watching load would say "35% is normal." An individual HTM watching spindle speed would say "6000 RPM is normal." But a multi-encoder HTM watching <strong>both together</strong> would say "this combination is new — anomaly."</p>
+
+  <h3>How It Works: Concatenated SDRs</h3>
+  <p>A multi-encoder takes 2, 3, or 4 signals and <strong>concatenates</strong> their individual encodings into one long SDR:</p>
+
+  <div class="demo-container">
+    <div class="demo-header">
+      <span class="demo-title">Multi-Encoder: xyz-load (3 signals concatenated)</span>
+    </div>
+    <canvas class="demo" id="multi-enc-demo" style="height:180px"></canvas>
+  </div>
+
+  <p>Each member signal gets its own encoder (same w=41, same settings as individual). The outputs are placed side by side:</p>
+  <ul style="margin: 1rem 0 1rem 1.5rem; color: var(--text);">
+    <li><strong>XM_load</strong> encoding: 256 bits (bits 0-255)</li>
+    <li><strong>YM_load</strong> encoding: 256 bits (bits 256-511)</li>
+    <li><strong>ZM_load</strong> encoding: 256 bits (bits 512-767)</li>
+    <li><strong>Total:</strong> 768 bits, with 41 &times; 3 = 123 bits active</li>
+  </ul>
+  <p>This combined SDR feeds into its own SP and TM — completely separate from the individual signal HTMs. The SP has 768 columns and picks 15 winners. The TM learns temporal patterns across all three signals simultaneously.</p>
+
+  <h3>Individual vs Multi-Encoder: What Each Catches</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 2rem 0;">
+    <div style="background: var(--bg2); padding: 1.2rem;">
+      <div style="color: var(--accent); font-weight: 600; font-size: 0.9rem; margin-bottom: 0.6rem;">Individual Encoder</div>
+      <div style="font-size: 0.85rem; color: var(--text);">
+        <p style="margin-bottom: 0.5rem;"><strong>Monitors:</strong> one signal in isolation</p>
+        <p style="margin-bottom: 0.5rem;"><strong>Catches:</strong> "XM_load spiked to 60%"</p>
+        <p style="margin-bottom: 0.5rem;"><strong>Misses:</strong> unusual combinations of normal values</p>
+        <p style="margin-bottom: 0.5rem;"><strong>SP columns:</strong> 256, 10 active</p>
+        <p style="margin-bottom: 0.5rem;"><strong>Faster learning:</strong> only 1 signal changing at a time</p>
+      </div>
+    </div>
+    <div style="background: var(--bg2); padding: 1.2rem;">
+      <div style="color: var(--accent2); font-weight: 600; font-size: 0.9rem; margin-bottom: 0.6rem;">Multi-Encoder</div>
+      <div style="font-size: 0.85rem; color: var(--text);">
+        <p style="margin-bottom: 0.5rem;"><strong>Monitors:</strong> 2-4 signals together</p>
+        <p style="margin-bottom: 0.5rem;"><strong>Catches:</strong> "XM_load + YM_load + ZM_load are in an unusual combination"</p>
+        <p style="margin-bottom: 0.5rem;"><strong>Misses:</strong> nothing extra (has all the info individual has, plus correlations)</p>
+        <p style="margin-bottom: 0.5rem;"><strong>SP columns:</strong> 512-1024, 10-20 active</p>
+        <p style="margin-bottom: 0.5rem;"><strong>Slower learning:</strong> multiple signals change simultaneously = more column churn</p>
+      </div>
+    </div>
+  </div>
+
+  <h3>The Tradeoff: More Context, More Noise</h3>
+  <p>Multi-encoders are more powerful in theory — they see correlations between signals that individual encoders miss. But they're harder to learn because <strong>multiple signals change between timesteps</strong>.</p>
+  <p>With an individual encoder, the load might change by 1 encoder bucket between readings. The SP swaps maybe 1 of 10 columns. Easy for the TM to predict.</p>
+  <p>With a 3-signal multi-encoder, each signal might change by 1 bucket = 3 total changes across the concatenated SDR. The SP might swap 3-4 of 15 columns. Harder for the TM to predict, even when the machine is operating normally.</p>
+  <p>This is why we run <strong>both</strong>: individual encoders for clean per-signal anomaly detection, and multi-encoders for catching unusual signal combinations. The individual encoders are the workhorses; the multi-encoders are the specialists.</p>
+
+  <h3>Our Multi-Encoder Groups</h3>
+  <p>The system runs 23 multi-encoder groups simultaneously, monitoring different signal combinations:</p>
+  <div style="font-size: 0.82rem; color: var(--text-dim); margin: 1rem 0; font-family: 'JetBrains Mono', monospace; line-height: 2;">
+    <span style="color: var(--accent2);">xyz-load:</span> XM + YM + ZM load (force balance across axes)<br>
+    <span style="color: var(--accent2);">xyz-temperature:</span> XM + YM + ZM temp (thermal balance)<br>
+    <span style="color: var(--accent2);">xyz-power:</span> XM + YM + ZM power (power distribution)<br>
+    <span style="color: var(--accent2);">x-motor-health:</span> XM load + XM temp + XM feedrate (per-axis health)<br>
+    <span style="color: var(--accent2);">spindle-health:</span> spindle load + spindle speed<br>
+    <span style="color: var(--accent2);">complete-force:</span> XM + YM + ZM load + spindle load (full force picture)<br>
+    <span style="color: var(--accent2);">x-load-execution:</span> XM load + execution state (behavioral context)<br>
+    <span style="color: var(--text-dim);">...and 16 more combinations</span>
+  </div>
+
+  <div class="callout warn">
+    <div class="callout-title">Multi-encoder parameter cascade</div>
+    Multi-encoder <code>inputBits</code> must equal the sum of member encoder bits. If you change a scalar encoder from 256 to 128 bits, every multi-encoder containing that signal must be updated too. With 23 groups referencing 15 signals, one change can cascade to 10+ config files.
+  </div>
+
+  <div class="callout">
+    <div class="callout-title">Processing cost</div>
+    Each signal update triggers its individual encoder PLUS every multi-encoder group it belongs to. XM_load participates in 8 groups — so one load reading triggers 9 HTM instances (1 individual + 8 groups). With 20 signals, that's ~40 HTM calls per 5-second cycle. The SP takes 10-100ms per call, so processing time adds up. Monitor queue depth to ensure the system keeps up with real-time data.
+  </div>
+</section>
+
+<!-- PUTTING IT ALL TOGETHER -->
+<section>
+  <div class="stage-num">Full Picture</div>
+  <h2>What Happens When a Machine Cuts Metal</h2>
+
+  <h3>1. Machine is Idle</h3>
+  <p>Load sits at 30%. The encoder produces the same SDR every 5 seconds. The SP picks the same 10 columns. The TM predicts perfectly &mdash; score 0.0. After 50 identical readings, learning stops to preserve memory.</p>
+
+  <h3>2. Cutting Starts</h3>
+  <p>Load jumps to 35%. The encoder slides ~10 buckets. Some SP columns change. The TM's predictions don't fully match &mdash; a few columns burst. Score spikes to 0.2-0.3 briefly. The TM builds new segments connecting the new pattern to the old. Within seconds, it's predicting again.</p>
+
+  <h3>3. Normal Cutting Oscillation</h3>
+  <p>Load varies between 28-35% as the tool moves. With w=41, these values share most of the same SDR bits. The SP activates mostly the same columns. The TM has learned "load oscillates in this range" and predicts correctly. Score stays near 0.</p>
+
+  <h3>4. Something Goes Wrong</h3>
+  <p>A tool starts wearing out. Load creeps from 35% to 50% over an hour. Each new high value crosses encoder buckets the TM hasn't seen. Scores spike. The likelihood calculator sees scores well above the normal baseline. <strong>Alert fires.</strong></p>
+  <p>Or: a bearing seizes. Load drops to 0% instantly. The TM predicted "35% next" and got 0%. Score = 1.0. Likelihood spikes immediately. <strong>Alert fires.</strong></p>
+
+  <h3>5. New Part Program</h3>
+  <p>The machine switches to a different part. Load patterns are completely different &mdash; 45% instead of 30%. The TM bursts on the new columns, learns the new pattern over a few minutes. Old patterns survive in dormant segments (maxSegmentsPerCell: 64). When the old part returns, the TM may recognize it instantly.</p>
+
+  <div class="callout">
+    <div class="callout-title">The key insight</div>
+    HTM doesn't detect "load is too high" (that's a threshold). It detects "this pattern has never happened before." A load of 90% during heavy cutting might be normal. A load of 40% during what should be idle is anomalous. The system learns context, not thresholds.
+  </div>
+</section>
+
+<!-- SUMMARY -->
+<section>
+  <div class="stage-num">Summary</div>
+  <h2>The Complete Config, Explained</h2>
+  <p>Every parameter in the config file serves one of four purposes. Click any card to highlight its connections. <span style="color: var(--warn);">Red warnings</span> = hard constraints.</p>
+
+  <style>
+    .dep-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.2rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    .dep-card:hover { background: var(--bg3); }
+    .dep-card.selected { border-color: var(--accent); box-shadow: 0 0 12px rgba(59,240,160,0.15); }
+    .dep-card.connected { border-color: var(--accent2); background: #1a2a3a; }
+    .dep-card.dimmed { opacity: 0.3; }
+    .dep-card-header { margin-bottom: 0.5rem; }
+    .dep-card-name { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--text-dim); display: block; }
+    .dep-card-val { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 700; color: var(--accent); display: block; margin-top: 0.15rem; }
+    .dep-card-desc { font-size: 0.82rem; color: var(--text); line-height: 1.55; margin-bottom: 0.3rem; }
+    .dep-detail { display: none; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border); }
+    .dep-card.selected .dep-detail { display: block; }
+    .dep-links { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; line-height: 1.8; }
+    .dep-link-out { color: var(--accent2); }
+    .dep-link-in { color: var(--purple); }
+    .dep-link-out::before { content: '\2500\25b8 '; }
+    .dep-link-in::before { content: '\25c2\2500 '; }
+    .dep-warn { color: var(--warn); font-size: 0.72rem; font-weight: 600; margin-top: 0.3rem; }
+    .dep-warn::before { content: '\26a0 '; }
+    .dep-computed { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--text-dim); font-style: italic; margin-top: 0.3rem; }
+    .dep-section-title { margin-top: 2rem; margin-bottom: 0.8rem; }
+    .dep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-bottom: 1.5rem; }
+  </style>
+
+  <h3 class="dep-section-title" style="color: var(--accent);">Encoder &mdash; How precisely to measure</h3>
+  <div class="dep-grid">
+    <div class="dep-card" data-id="inputBits">
+      <div class="dep-card-header"><span class="dep-card-name">inputBits</span><span class="dep-card-val">256</span></div>
+      <div class="dep-card-desc">The total number of bits in the encoder's output. This is the foundation that everything else builds on. Reducing it makes the system less sensitive to small changes (good for noisy CNC signals) but also reduces the total number of distinct patterns the encoder can represent. When you change this, numColumns must change to match, and every multi-encoder that includes this signal must update its inputBits too.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-out">numColumns (must equal this)</div>
+          <div class="dep-link-out">w (together they determine resolution: 1/(n-w))</div>
+        </div>
+        <div class="dep-warn">Cascades to all multi-encoder inputBits (sum of members)</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="w">
+      <div class="dep-card-header"><span class="dep-card-name">w</span><span class="dep-card-val">41</span></div>
+      <div class="dep-card-desc">How many bits are ON in every encoding. This is the single most important parameter for controlling noise sensitivity. With w=41, two values that are one bucket apart share 40 of 41 bits (97% overlap). The Spatial Pooler sees nearly identical input and picks the same columns. This makes the system tolerant to normal load jitter during cutting. Must be odd.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-in">inputBits (resolution = 1/(inputBits - w))</div>
+          <div class="dep-link-out">skipLearnStable (wider w = more values hash identically)</div>
+        </div>
+        <div class="dep-computed">Sparsity: 41/256 = 16% &bull; 215 bucket positions &bull; 0.47% load per bucket</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="minMax">
+      <div class="dep-card-header"><span class="dep-card-name">minVal / maxVal</span><span class="dep-card-val">0 &mdash; 1</span></div>
+      <div class="dep-card-desc">The range of values the encoder can represent. Set to 0-1 because mtc2anomaly normalizes all raw sensor values into this range before sending them. With clipInput=true, any value outside this range gets clamped to the boundary instead of causing an error. Tighter ranges increase resolution within that region but clip everything outside.</div>
+      <div class="dep-detail">
+        <div class="dep-computed">Normalization ranges are configured per-signal in mtc2anomaly appsettings.json</div>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="dep-section-title" style="color: var(--accent2);">Spatial Pooler &mdash; How columns are selected</h3>
+  <div class="dep-grid">
+    <div class="dep-card" data-id="numColumns">
+      <div class="dep-card-header"><span class="dep-card-name">numColumns</span><span class="dep-card-val">256</span></div>
+      <div class="dep-card-desc">The total number of minicolumns in the Spatial Pooler. Each column competes to represent the current input. Out of these 256, only 10 win each cycle. This determines the total capacity of the system: 256 columns &times; 16 cells = 4,096 cells that can store learned patterns.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-in">inputBits (must equal)</div>
+          <div class="dep-link-out">cellsPerColumn (total cells = numColumns &times; cellsPerColumn)</div>
+        </div>
+        <div class="dep-warn">MUST equal inputBits</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="numActive">
+      <div class="dep-card-header"><span class="dep-card-name">numActiveColumnsPerInhArea</span><span class="dep-card-val">10</span></div>
+      <div class="dep-card-desc">How many columns win the competition each cycle. With 10 active out of 256, the SP output is 3.9% sparse. More active columns means more overlap between consecutive timesteps (small value changes swap fewer columns), which makes TM predictions more robust. But too many active columns reduces the distinctness between different input patterns.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-out">activationThreshold (MUST be greater than this)</div>
+        </div>
+        <div class="dep-warn">activationThreshold MUST be less than this, or the TM can never predict</div>
+        <div class="dep-computed">SP output sparsity: 10/256 = 3.9%</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="potPct">
+      <div class="dep-card-header"><span class="dep-card-name">potentialPct</span><span class="dep-card-val">0.5</span></div>
+      <div class="dep-card-desc">The fraction of input bits each column is randomly wired to at startup. At 0.5, each column connects to ~128 of the 256 input bits. Higher values mean columns respond to broader input regions. Lower values mean more specialized columns but potentially less stable representations.</div>
+    </div>
+    <div class="dep-card" data-id="synPermConn">
+      <div class="dep-card-header"><span class="dep-card-name">synPermConnected</span><span class="dep-card-val">0.25</span></div>
+      <div class="dep-card-desc">The permanence threshold that determines whether a synapse is "connected" and counts toward a column's overlap score. Synapses with permanence above 0.25 contribute to the competition; below 0.25 they exist but don't help the column win. This threshold also applies to the TM's distal synapses when determining if a segment activates.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-out">initialPermanence (must be greater than this)</div>
+        </div>
+        <div class="dep-warn">initialPermanence MUST be &gt; this, or new TM synapses start disconnected</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="synPermInc">
+      <div class="dep-card-header"><span class="dep-card-name">synPermActiveInc</span><span class="dep-card-val">0.15</span></div>
+      <div class="dep-card-desc">How much the SP strengthens connections to active input bits each cycle. At 0.15 per cycle, a synapse goes from initial (0.21) to well-connected (0.36) in just one cycle. The ratio with synPermInactiveDec (30:1) means the SP builds connections much faster than it tears them down, creating stable column specialists over time.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-out">synPermInactiveDec (30:1 ratio controls specialization speed)</div>
+        </div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="synPermDec">
+      <div class="dep-card-header"><span class="dep-card-name">synPermInactiveDec</span><span class="dep-card-val">0.005</span></div>
+      <div class="dep-card-desc">How much the SP weakens connections to inactive input bits each cycle. At 0.005, it takes 50 cycles for a synapse to drop by 0.25 (from connected to disconnected). This slow decay means columns retain their learned specializations even through periods of different input. Too high and columns forget; too low and columns can never change.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-in">synPermActiveInc (30:1 ratio &mdash; builds 30x faster than it decays)</div>
+        </div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="maxBoost">
+      <div class="dep-card-header"><span class="dep-card-name">maxBoost</span><span class="dep-card-val">1.2</span></div>
+      <div class="dep-card-desc">Columns that rarely win get a boost multiplier to stay competitive. At 1.2, underactive columns get up to 20% more overlap credit. This prevents "dead columns" that never participate. Setting to 1.0 disables boosting entirely. Recalculated every dutyCyclePeriod (600) cycles.</div>
+    </div>
+  </div>
+
+  <h3 class="dep-section-title" style="color: var(--yellow);">Temporal Memory &mdash; How it learns and remembers</h3>
+  <div class="dep-grid">
+    <div class="dep-card" data-id="cellsPerCol">
+      <div class="dep-card-header"><span class="dep-card-name">cellsPerColumn</span><span class="dep-card-val">16</span></div>
+      <div class="dep-card-desc">How many cells are stacked in each column. Each cell can represent the same input value in a different temporal context. Cell 3 in column 42 might mean "30% load after idle" while cell 7 means "30% load during roughing." More cells = more contexts = the TM can distinguish more situations where the same value means different things.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-in">numColumns (total cells = 256 &times; 16 = 4,096)</div>
+        </div>
+        <div class="dep-computed">Total cells: 4,096 &bull; Max segments: 262,144 &bull; Max synapses: 8.4M</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="actThresh">
+      <div class="dep-card-header"><span class="dep-card-name">activationThreshold</span><span class="dep-card-val" style="color:var(--warn)">4</span></div>
+      <div class="dep-card-desc">The number of connected synapses needed for a segment (prediction rule) to activate and trigger a prediction. This is the most critical constraint in the system: it MUST be less than numActiveColumnsPerInhArea. With 10 active columns, segments can have at most 10 synapses. Setting threshold to 4 means a segment only needs 4 of those 10 to match &mdash; giving it tolerance for columns that change between timesteps.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-in">numActive (10) &mdash; MUST be greater than this</div>
+          <div class="dep-link-out">minThreshold &mdash; must be &le; activationThreshold</div>
+        </div>
+        <div class="dep-warn">MUST be &lt; numActiveColumnsPerInhArea (10). Current gap: 6</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="minThresh">
+      <div class="dep-card-header"><span class="dep-card-name">minThreshold</span><span class="dep-card-val">3</span></div>
+      <div class="dep-card-desc">The minimum number of potential (not necessarily connected) synapses needed for a segment to be considered a "near miss." Segments above this threshold but below activationThreshold are candidates for learning &mdash; the TM will reinforce them so they can eventually cross the activation threshold and start predicting.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-in">activationThreshold (minThreshold must be &le; this)</div>
+        </div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="initPerm">
+      <div class="dep-card-header"><span class="dep-card-name">initialPermanence</span><span class="dep-card-val">0.35</span></div>
+      <div class="dep-card-desc">The permanence value assigned to newly created synapses. At 0.35, new synapses start well above the connected threshold (0.25), meaning they work immediately without needing to be reinforced first. The gap of 0.10 between initial permanence and the threshold means a synapse can survive 2 wrong predictions (losing 0.05 each time) before dropping below the threshold and disconnecting.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-in">synPermConnected (0.25) &mdash; must be less than initialPerm</div>
+          <div class="dep-link-out">permanenceDecrement (survival = margin / decrement = 0.10/0.05 = 2)</div>
+        </div>
+        <div class="dep-warn">MUST be &gt; synPermConnected (0.25)</div>
+        <div class="dep-computed">Margin: 0.10 &bull; Survives 2 wrong predictions before disconnecting</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="permInc">
+      <div class="dep-card-header"><span class="dep-card-name">permanenceIncrement</span><span class="dep-card-val">0.10</span></div>
+      <div class="dep-card-desc">How much a synapse is strengthened when it correctly contributes to a prediction. At +0.10 per correct prediction, a synapse at 0.35 reaches 0.45 after one success. The ratio with permanenceDecrement (2:1) means the network builds connections twice as fast as it tears them down, creating a bias toward retaining learned patterns. This helps the system remember multiple cutting programs.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-out">permanenceDecrement (2:1 ratio &mdash; builds 2x faster than decays)</div>
+        </div>
+        <div class="dep-computed">After 5 correct predictions: 0.35 &rarr; 0.85 (very strong)</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="permDec">
+      <div class="dep-card-header"><span class="dep-card-name">permanenceDecrement</span><span class="dep-card-val">0.05</span></div>
+      <div class="dep-card-desc">How much a synapse weakens when its source cell was not active during a prediction. At -0.05 per wrong prediction, a synapse starting at 0.35 crosses below the connected threshold (0.25) after just 2 consecutive errors. This is intentionally half the increment rate (0.05 vs 0.10) so the system forgets more slowly than it learns &mdash; old patterns survive longer in dormant segments.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-in">permanenceIncrement (2:1 ratio)</div>
+          <div class="dep-link-in">initialPermanence (survival = (0.35-0.25)/0.05 = 2 wrong predictions)</div>
+        </div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="maxSegs">
+      <div class="dep-card-header"><span class="dep-card-name">maxSegmentsPerCell</span><span class="dep-card-val">64</span></div>
+      <div class="dep-card-desc">The maximum number of segments (prediction rules) each cell can hold. When a cell is full and a new pattern needs a segment, the least recently used segment gets evicted. At 64, each cell can remember 64 different temporal contexts &mdash; enough for multiple cutting programs to coexist. When an old program returns, its dormant segments may still be there, enabling instant recognition without re-learning.</div>
+      <div class="dep-detail">
+        <div class="dep-computed">Capacity: 4,096 cells &times; 64 segs &times; 32 syns = 8.4M max synapses</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="skipLearn">
+      <div class="dep-card-header"><span class="dep-card-name">skipLearnAfterStableCount</span><span class="dep-card-val">50</span></div>
+      <div class="dep-card-desc">After this many consecutive identical encoder outputs, learning is suppressed for both the SP and TM. During long idle periods, the same value repeats thousands of times. Without this limit, the TM builds redundant segments on multiple cells, wasting capacity needed for cutting patterns. At 50 (~4 minutes of identical readings), the system learns the pattern then preserves it. Set to 0 for discrete signals like spindle speed or execution state that need continuous learning.</div>
+      <div class="dep-detail">
+        <div class="dep-links">
+          <div class="dep-link-in">w (wider w = more distinct values hash identically = triggers more often)</div>
+        </div>
+        <div class="dep-computed">Disabled (0) for: spindle speed, category encoder, multi-encoders</div>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="dep-section-title" style="color: var(--purple);">Sensitivity &mdash; When to alert</h3>
+  <div class="dep-grid">
+    <div class="dep-card" data-id="anomWindow">
+      <div class="dep-card-header"><span class="dep-card-name">anomalyWindowSize (W)</span><span class="dep-card-val">20,000</span></div>
+      <div class="dep-card-desc">The rolling window of raw anomaly scores used to compute the baseline mean and standard deviation. The likelihood calculator asks "is the current score unusual compared to this window?" At 20,000 samples with 5-second intervals, this covers ~28 hours. Larger windows produce more stable baselines but take longer to adapt after machine changes. The Numenta paper used 8,000 and noted the system is "not sensitive to W as long as large enough."</div>
+    </div>
+    <div class="dep-card" data-id="anomShort">
+      <div class="dep-card-header"><span class="dep-card-name">anomalyShortTermWindow (W&prime;)</span><span class="dep-card-val">10</span></div>
+      <div class="dep-card-desc">The short-term window that smooths recent raw scores before comparing to the baseline. Instead of reacting to a single timestep spike, the system averages the last 10 scores. A spike must persist for ~50 seconds to affect the short-term mean enough to trigger. This prevents false alerts from one-off prediction errors. Must be much smaller than the main window (10 vs 20,000).</div>
+      <div class="dep-detail">
+        <div class="dep-computed">W&prime; (10) &Lt;&Lt; W (20,000) &mdash; short-term vs long-term comparison</div>
+      </div>
+    </div>
+    <div class="dep-card" data-id="anomThresh">
+      <div class="dep-card-header"><span class="dep-card-name">anomalyLikelihoodThreshold</span><span class="dep-card-val">0.99999</span></div>
+      <div class="dep-card-desc">The anomaly likelihood must exceed this threshold to trigger an alert. At 0.99999 (five 9s), the system only flags when it's 99.999% certain the current error level is unusual. This matches the Numenta research paper's recommendation of &epsilon; = 10&#x207B;&#x2075;, which they found "works well across a large range of domains" without per-application tuning. Very conservative &mdash; minimizes false positives at the cost of slightly delayed detection.</div>
+    </div>
+    <div class="dep-card" data-id="anomLearn">
+      <div class="dep-card-header"><span class="dep-card-name">anomalyLearningPeriod</span><span class="dep-card-val">500</span></div>
+      <div class="dep-card-desc">During the first 500 timesteps after startup (~42 minutes), the raw anomaly score ramps up gradually from 0 instead of immediately reporting 1.0. This prevents a burst of false anomaly alerts during cold start when the TM has no learned patterns yet. After 500 timesteps, the score reflects the actual prediction quality. Only matters after a restart &mdash; irrelevant during normal operation.</div>
+    </div>
+  </div>
+
+  <script>
+  (function() {
+    var depMap = {
+      'inputBits': ['numColumns', 'w'],
+      'w': ['inputBits', 'skipLearn'],
+      'numColumns': ['inputBits', 'cellsPerCol'],
+      'numActive': ['actThresh'],
+      'synPermConn': ['initPerm'],
+      'synPermInc': ['synPermDec'],
+      'synPermDec': ['synPermInc'],
+      'cellsPerCol': ['numColumns'],
+      'actThresh': ['numActive', 'minThresh'],
+      'minThresh': ['actThresh'],
+      'initPerm': ['synPermConn', 'permDec'],
+      'permInc': ['permDec'],
+      'permDec': ['permInc', 'initPerm'],
+      'skipLearn': ['w']
+    };
+    var selected = null;
+    var cards = document.querySelectorAll('.dep-card[data-id]');
+
+    function updateHighlights() {
+      var connected = {};
+      if (selected && depMap[selected]) {
+        connected[selected] = true;
+        depMap[selected].forEach(function(id) { connected[id] = true; });
+        // Also find cards that reference selected
+        Object.keys(depMap).forEach(function(k) {
+          if (depMap[k].indexOf(selected) !== -1) connected[k] = true;
+        });
+      }
+      cards.forEach(function(card) {
+        var id = card.getAttribute('data-id');
+        card.classList.remove('selected', 'connected', 'dimmed');
+        if (!selected) return;
+        if (id === selected) card.classList.add('selected');
+        else if (connected[id]) card.classList.add('connected');
+        else card.classList.add('dimmed');
+      });
+    }
+
+    cards.forEach(function(card) {
+      card.addEventListener('click', function() {
+        var id = card.getAttribute('data-id');
+        selected = (selected === id) ? null : id;
+        updateHighlights();
+      });
+    });
+  })();
+  </script>
+
+</section>
+
+</div>
+
+<div class="footer">
+  Built while tuning HTM anomaly detection for CNC machine monitoring.<br>
+  Based on research from the ladder100 project, March 2026.
+</div>
+
+<script>
+// --- ENCODER DEMO ---
+(function() {
+  const canvas = document.getElementById('encoder-demo');
+  const ctx = canvas.getContext('2d');
+  const label = document.getElementById('enc-val');
+  let value = 0.3027;
+  let dragging = false;
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+
+    ctx.fillStyle = '#13131a';
+    ctx.fillRect(0, 0, w, h);
+
+    const n = 256;
+    const ew = 41;
+    const cellW = w / n;
+    const resolution = 1.0 / (n - ew);
+    const halfWidth = Math.floor((ew - 1) / 2);
+    const padding = halfWidth;
+    const center = Math.floor((value + resolution / 2) / resolution) + padding;
+    const first = center - halfWidth;
+
+    for (let i = 0; i < n; i++) {
+      const on = (i >= first && i < first + ew);
+      ctx.fillStyle = on ? '#3bf0a0' : '#1a1a24';
+      ctx.fillRect(i * cellW + 0.5, 20, cellW - 1, h - 40);
+    }
+
+    // Position indicator
+    ctx.fillStyle = '#6e6e82';
+    ctx.font = '11px JetBrains Mono';
+    ctx.textAlign = 'left';
+    ctx.fillText('0', 4, 14);
+    ctx.textAlign = 'right';
+    ctx.fillText('1', w - 4, 14);
+    ctx.textAlign = 'center';
+    const xPos = value * w;
+    ctx.fillStyle = '#ffd44a';
+    ctx.fillText('\u25bc', xPos, 14);
+  }
+
+  canvas.addEventListener('mousedown', () => dragging = true);
+  canvas.addEventListener('mouseup', () => dragging = false);
+  canvas.addEventListener('mouseleave', () => dragging = false);
+  canvas.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    value = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    label.textContent = value.toFixed(4);
+    draw();
+  });
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    value = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    label.textContent = value.toFixed(4);
+    draw();
+  });
+
+  draw();
+  window.addEventListener('resize', draw);
+})();
+
+// --- SP DEMO ---
+(function() {
+  const canvas = document.getElementById('sp-demo');
+  const ctx = canvas.getContext('2d');
+  const cols = 40; // simplified view
+  const active = [1, 5, 9, 14, 16, 23, 27, 30, 34, 39]; // 10 winners (irregularly scattered)
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+
+    ctx.fillStyle = '#13131a';
+    ctx.fillRect(0, 0, w, h);
+
+    const cellW = w / cols;
+    const barH = h - 60;
+
+    // Draw overlap scores as bars
+    for (let i = 0; i < cols; i++) {
+      const isActive = active.includes(i);
+      const overlap = isActive ? 0.6 + Math.random() * 0.4 : Math.random() * 0.5;
+      const bh = overlap * barH;
+
+      ctx.fillStyle = isActive ? '#3bf0a0' : '#2a2a3a';
+      ctx.fillRect(i * cellW + 2, h - 30 - bh, cellW - 4, bh);
+
+      if (isActive) {
+        ctx.fillStyle = '#3bf0a0';
+        ctx.font = '9px JetBrains Mono';
+        ctx.textAlign = 'center';
+        ctx.fillText('\u2605', i * cellW + cellW / 2, h - 16);
+      }
+    }
+
+    ctx.fillStyle = '#6e6e82';
+    ctx.font = '10px JetBrains Mono';
+    ctx.textAlign = 'left';
+    ctx.fillText('overlap score \u2191', 4, 16);
+    ctx.textAlign = 'right';
+    ctx.fillText('\u2605 = winner (10 of 40 shown)', w - 4, 16);
+  }
+
+  draw();
+  window.addEventListener('resize', draw);
+})();
+
+// --- SP LEARN DEMO ---
+(function() {
+  const canvas = document.getElementById('sp-learn-demo');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const NUM_WIRES = 40; // simplified view of a column's connections
+  const ACTIVE_START = 12, ACTIVE_END = 20; // which input bits are "active" (simulating encoder)
+  const CONNECTED_THRESHOLD = 0.25;
+  const INC = 0.15, DEC = 0.005;
+
+  let cycle = 0;
+  let permanences = [];
+  let overlapHistory = [];
+
+  function reset() {
+    cycle = 0;
+    permanences = [];
+    overlapHistory = [];
+    // Initialize with random permanences around the threshold
+    const rng = (function(s) { return function() { s = (s*16807)%2147483647; return s/2147483647; }; })(42);
+    for (let i = 0; i < NUM_WIRES; i++) {
+      permanences.push(0.15 + rng() * 0.20); // 0.15 to 0.35
+    }
+    computeOverlap();
+    draw();
+  }
+
+  function computeOverlap() {
+    let connected = 0;
+    for (let i = 0; i < NUM_WIRES; i++) {
+      const isActive = i >= ACTIVE_START && i < ACTIVE_END;
+      if (permanences[i] >= CONNECTED_THRESHOLD && isActive) connected++;
+    }
+    overlapHistory.push(connected);
+    if (overlapHistory.length > 80) overlapHistory.shift();
+  }
+
+  function learnOnce() {
+    cycle++;
+    for (let i = 0; i < NUM_WIRES; i++) {
+      const isActive = i >= ACTIVE_START && i < ACTIVE_END;
+      if (isActive) {
+        permanences[i] = Math.min(1.0, permanences[i] + INC);
+      } else {
+        permanences[i] = Math.max(0.0, permanences[i] - DEC);
+      }
+    }
+    computeOverlap();
+    draw();
+  }
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0, 0, w, h);
+
+    const margin = 30;
+    const barAreaW = w * 0.55;
+    const chartAreaX = w * 0.62;
+    const chartAreaW = w - chartAreaX - margin;
+
+    // --- Title ---
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('Cycle: ' + cycle, margin, 18);
+
+    // Count stats
+    let connectedActive = 0, connectedInactive = 0, totalConnected = 0;
+    for (let i = 0; i < NUM_WIRES; i++) {
+      const isActive = i >= ACTIVE_START && i < ACTIVE_END;
+      if (permanences[i] >= CONNECTED_THRESHOLD) {
+        totalConnected++;
+        if (isActive) connectedActive++; else connectedInactive++;
+      }
+    }
+    ctx.fillStyle = '#6e6e82'; ctx.textAlign = 'right';
+    ctx.fillText('Connected to active bits: ' + connectedActive + '/' + (ACTIVE_END - ACTIVE_START), barAreaW + margin, 18);
+
+    // --- Permanence bars ---
+    const barH = 5;
+    const barGap = 1.5;
+    const startY = 30;
+
+    for (let i = 0; i < NUM_WIRES; i++) {
+      const y = startY + i * (barH + barGap);
+      const p = permanences[i];
+      const isActive = i >= ACTIVE_START && i < ACTIVE_END;
+      const isConnected = p >= CONNECTED_THRESHOLD;
+
+      // Background
+      ctx.fillStyle = '#1a1a24';
+      ctx.fillRect(margin, y, barAreaW, barH);
+
+      // Permanence bar
+      if (isActive && isConnected) {
+        ctx.fillStyle = '#3bf0a0';
+      } else if (isActive) {
+        ctx.fillStyle = '#3bf0a066';
+      } else if (isConnected) {
+        ctx.fillStyle = '#6e6e82';
+      } else {
+        ctx.fillStyle = '#333';
+      }
+      ctx.fillRect(margin, y, barAreaW * p, barH);
+
+      // Input bit indicator
+      ctx.fillStyle = isActive ? '#3bf0a0' : '#2a2a3a';
+      ctx.fillRect(margin - 8, y, 5, barH);
+    }
+
+    // Threshold line
+    const threshX = margin + barAreaW * CONNECTED_THRESHOLD;
+    ctx.strokeStyle = '#ffd44a66'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(threshX, startY - 4); ctx.lineTo(threshX, startY + NUM_WIRES * (barH + barGap)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffd44a88'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('0.25', threshX, startY - 6);
+
+    // Scale labels
+    ctx.fillStyle = '#6e6e82'; ctx.font = '8px JetBrains Mono';
+    ctx.textAlign = 'left'; ctx.fillText('0', margin, startY + NUM_WIRES * (barH + barGap) + 12);
+    ctx.textAlign = 'right'; ctx.fillText('1.0', margin + barAreaW, startY + NUM_WIRES * (barH + barGap) + 12);
+
+    // Legend
+    const legY = startY + NUM_WIRES * (barH + barGap) + 24;
+    ctx.font = '9px Outfit'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#3bf0a0'; ctx.fillRect(margin, legY, 8, 8);
+    ctx.fillText(' connected to active input bit (+0.15/cycle)', margin + 12, legY + 8);
+    ctx.fillStyle = '#6e6e82'; ctx.fillRect(margin, legY + 14, 8, 8);
+    ctx.fillText(' connected to inactive input bit (-0.005/cycle)', margin + 12, legY + 22);
+    ctx.fillStyle = '#333'; ctx.fillRect(margin, legY + 28, 8, 8);
+    ctx.fillText(' below threshold (not connected)', margin + 12, legY + 36);
+
+    // --- Overlap chart (right side) ---
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('Overlap Score', chartAreaX, 18);
+
+    const chartY = 30;
+    const chartH = h - chartY - 50;
+    const maxOverlap = ACTIVE_END - ACTIVE_START;
+
+    // Chart background
+    ctx.fillStyle = '#1a1a24';
+    ctx.fillRect(chartAreaX, chartY, chartAreaW, chartH);
+
+    // Grid lines
+    ctx.strokeStyle = '#2a2a3a'; ctx.lineWidth = 0.5;
+    for (let v = 0; v <= maxOverlap; v += 2) {
+      const gy = chartY + chartH - (v / maxOverlap) * chartH;
+      ctx.beginPath(); ctx.moveTo(chartAreaX, gy); ctx.lineTo(chartAreaX + chartAreaW, gy); ctx.stroke();
+    }
+
+    // Plot overlap history
+    if (overlapHistory.length > 1) {
+      ctx.beginPath(); ctx.strokeStyle = '#3bf0a0'; ctx.lineWidth = 2;
+      for (let i = 0; i < overlapHistory.length; i++) {
+        const x = chartAreaX + (i / 79) * chartAreaW;
+        const y = chartY + chartH - (overlapHistory[i] / maxOverlap) * chartH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Fill under
+      ctx.lineTo(chartAreaX + ((overlapHistory.length - 1) / 79) * chartAreaW, chartY + chartH);
+      ctx.lineTo(chartAreaX, chartY + chartH);
+      ctx.fillStyle = '#3bf0a018'; ctx.fill();
+    }
+
+    // Current value label
+    const currentOverlap = overlapHistory[overlapHistory.length - 1] || 0;
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '20px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText(currentOverlap, chartAreaX + chartAreaW / 2, chartY + chartH / 2);
+    ctx.fillStyle = '#6e6e82'; ctx.font = '9px JetBrains Mono';
+    ctx.fillText('of ' + maxOverlap + ' active bits', chartAreaX + chartAreaW / 2, chartY + chartH / 2 + 16);
+
+    // Y axis labels
+    ctx.fillStyle = '#6e6e82'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'right';
+    ctx.fillText('0', chartAreaX - 4, chartY + chartH);
+    ctx.fillText(maxOverlap, chartAreaX - 4, chartY + 8);
+  }
+
+  document.getElementById('sp-learn-btn').addEventListener('click', learnOnce);
+  document.getElementById('sp-learn10-btn').addEventListener('click', () => { for (let i = 0; i < 10; i++) learnOnce(); });
+  document.getElementById('sp-learn-reset').addEventListener('click', reset);
+
+  reset();
+  window.addEventListener('resize', draw);
+})();
+
+// --- SP MAPPING DEMO ---
+(function() {
+  const canvas = document.getElementById('sp-mapping-demo');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const infoEl = document.getElementById('sp-map-info');
+
+  const N = 256, W = 41, NUM_COLS = 256, NUM_ACTIVE = 10;
+  const resolution = 1.0 / (N - W);
+  const halfW = Math.floor((W - 1) / 2);
+  const padding = halfW;
+
+  // Seeded random for deterministic column wiring
+  function makeRng(seed) {
+    let s = seed;
+    return function() { s = (s * 16807 + 0) % 2147483647; return s / 2147483647; };
+  }
+
+  // Pre-generate column wiring (which input bits each column connects to)
+  const columnWiring = [];
+  const rng = makeRng(42);
+  for (let c = 0; c < NUM_COLS; c++) {
+    const wires = [];
+    for (let b = 0; b < N; b++) {
+      if (rng() < 0.5) wires.push(b);
+    }
+    columnWiring.push(wires);
+  }
+
+  function getEncoderBits(value) {
+    const v = Math.max(0, Math.min(1, value));
+    const center = Math.floor((v + resolution / 2) / resolution) + padding;
+    const first = center - halfW;
+    const bits = new Set();
+    for (let i = first; i < first + W; i++) {
+      if (i >= 0 && i < N) bits.add(i);
+    }
+    return bits;
+  }
+
+  function getActiveColumns(encoderBits) {
+    // Compute overlap for each column
+    const overlaps = [];
+    for (let c = 0; c < NUM_COLS; c++) {
+      let overlap = 0;
+      for (const wire of columnWiring[c]) {
+        if (encoderBits.has(wire)) overlap++;
+      }
+      overlaps.push({ col: c, overlap: overlap });
+    }
+    // Sort by overlap descending, take top NUM_ACTIVE
+    overlaps.sort((a, b) => b.overlap - a.overlap || a.col - b.col);
+    return overlaps.slice(0, NUM_ACTIVE).map(o => o.col).sort((a, b) => a - b);
+  }
+
+  let loadA = 0.30, loadB = 0.50;
+  let dragging = null; // 'A' or 'B'
+
+  function computeState() {
+    const bitsA = getEncoderBits(loadA);
+    const bitsB = getEncoderBits(loadB);
+    const colsA = getActiveColumns(bitsA);
+    const colsB = getActiveColumns(bitsB);
+
+    const setA = new Set(colsA);
+    const setB = new Set(colsB);
+    let inter = 0;
+    for (const c of setA) if (setB.has(c)) inter++;
+    const union = setA.size + setB.size - inter;
+    const jaccard = union > 0 ? inter / union : 1;
+
+    return { bitsA, bitsB, colsA, colsB, matched: inter, jaccard };
+  }
+
+  function drawSlider(y, value, color, label, w, margin, barW) {
+    ctx.fillStyle = '#2a2a3a';
+    ctx.fillRect(margin, y, barW, 6);
+    const knobX = margin + value * barW;
+    ctx.fillStyle = color;
+    ctx.fillRect(margin, y, knobX - margin, 6);
+    ctx.beginPath(); ctx.arc(knobX, y + 3, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#0c0c0f'; ctx.font = 'bold 7px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText(label, knobX, y + 6);
+  }
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0, 0, w, h);
+
+    const margin = 20;
+    const barW = w - margin * 2;
+    const state = computeState();
+
+    // --- Two sliders ---
+    drawSlider(16, loadA, '#3bf0a0', 'A', w, margin, barW);
+    drawSlider(36, loadB, '#ff6b4a', 'B', w, margin, barW);
+
+    // Labels
+    ctx.font = '11px JetBrains Mono';
+    ctx.textAlign = 'left'; ctx.fillStyle = '#3bf0a0';
+    ctx.fillText('A: ' + (loadA * 100).toFixed(1) + '%', margin, 60);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#ff6b4a';
+    ctx.fillText('B: ' + (loadB * 100).toFixed(1) + '%', w / 2, 60);
+
+    if (infoEl) infoEl.textContent = 'A=' + (loadA*100).toFixed(1) + '%  B=' + (loadB*100).toFixed(1) + '%';
+
+    // Scale labels
+    ctx.fillStyle = '#6e6e82'; ctx.font = '8px JetBrains Mono';
+    ctx.textAlign = 'left'; ctx.fillText('0%', margin, 50);
+    ctx.textAlign = 'right'; ctx.fillText('100%', margin + barW, 50);
+
+    // --- Encoder SDRs ---
+    const sdrY = 68;
+    const bitW = barW / N;
+
+    // SDR A
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('A', margin - 14, sdrY + 10);
+    for (let i = 0; i < N; i++) {
+      const x = margin + i * bitW;
+      ctx.fillStyle = state.bitsA.has(i) ? '#3bf0a0' : '#1a1a24';
+      ctx.fillRect(x + 0.2, sdrY, bitW - 0.4, 12);
+    }
+
+    // SDR B
+    const sdrBY = sdrY + 16;
+    ctx.fillStyle = '#ff6b4a'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('B', margin - 14, sdrBY + 10);
+    for (let i = 0; i < N; i++) {
+      const x = margin + i * bitW;
+      ctx.fillStyle = state.bitsB.has(i) ? '#ff6b4a' : '#1a1a24';
+      ctx.fillRect(x + 0.2, sdrBY, bitW - 0.4, 12);
+    }
+
+    // Overlap row
+    const ovrY = sdrBY + 16;
+    ctx.fillStyle = '#ffd44a'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('\u2229', margin - 14, ovrY + 10);
+    for (let i = 0; i < N; i++) {
+      const x = margin + i * bitW;
+      const inA = state.bitsA.has(i), inB = state.bitsB.has(i);
+      if (inA && inB) ctx.fillStyle = '#ffd44a';
+      else if (inA) ctx.fillStyle = '#3bf0a033';
+      else if (inB) ctx.fillStyle = '#ff6b4a33';
+      else ctx.fillStyle = '#111118';
+      ctx.fillRect(x + 0.2, ovrY, bitW - 0.4, 12);
+    }
+
+    // --- SP Columns ---
+    const colY = ovrY + 24;
+    const colCellW = barW / 64;
+
+    function drawColRow(cols, color, label, y) {
+      ctx.fillStyle = color; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+      ctx.fillText(label, margin - 14, y + 12);
+      for (let i = 0; i < 64; i++) {
+        const x = margin + i * colCellW;
+        let active = false;
+        for (const c of cols) {
+          if (Math.round(c * 64 / NUM_COLS) === i) { active = true; break; }
+        }
+        ctx.fillStyle = active ? color : '#1a1a24';
+        ctx.fillRect(x + 0.5, y, colCellW - 1, 16);
+      }
+    }
+
+    ctx.fillStyle = '#6e6e82'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('SP Active Columns:', margin, colY);
+    drawColRow(state.colsA, '#3bf0a0', 'A', colY + 8);
+    drawColRow(state.colsB, '#ff6b4a', 'B', colY + 30);
+
+    // Overlap columns row
+    const colOvrY = colY + 52;
+    ctx.fillStyle = '#ffd44a'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('\u2229', margin - 14, colOvrY + 12);
+    const setA = new Set(state.colsA);
+    for (let i = 0; i < 64; i++) {
+      const x = margin + i * colCellW;
+      let inA = false, inB = false;
+      for (const c of state.colsA) { if (Math.round(c * 64 / NUM_COLS) === i) { inA = true; break; } }
+      for (const c of state.colsB) { if (Math.round(c * 64 / NUM_COLS) === i) { inB = true; break; } }
+      if (inA && inB) ctx.fillStyle = '#ffd44a';
+      else if (inA) ctx.fillStyle = '#3bf0a033';
+      else if (inB) ctx.fillStyle = '#ff6b4a33';
+      else ctx.fillStyle = '#1a1a24';
+      ctx.fillRect(x + 0.5, colOvrY, colCellW - 1, 16);
+    }
+
+    // --- Match stats ---
+    const statsY = colOvrY + 28;
+    const m = state.matched, j = state.jaccard;
+    ctx.font = '13px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillStyle = m >= 9 ? '#3bf0a0' : m >= 7 ? '#ffd44a' : '#ff6b4a';
+    ctx.fillText(m + ' of ' + NUM_ACTIVE + ' columns shared', w / 2, statsY);
+
+    ctx.font = '11px JetBrains Mono'; ctx.fillStyle = '#6e6e82';
+    const scoreEst = m === NUM_ACTIVE ? 'Score: 0.0 \u2014 identical' :
+      m >= 9 ? 'Score: ~0.1 \u2014 barely noticeable' :
+      m >= 7 ? 'Score: ~0.3 \u2014 some columns changed' :
+      m >= 4 ? 'Score: ~0.6 \u2014 mostly different' :
+      'Score: ~1.0 \u2014 completely new pattern';
+    ctx.fillText(scoreEst, w / 2, statsY + 18);
+
+    // Column list comparison
+    const listY = statsY + 34;
+    ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#3bf0a0';
+    ctx.fillText('A cols: [' + state.colsA.join(', ') + ']', margin, listY);
+    ctx.fillStyle = '#ff6b4a';
+    ctx.fillText('B cols: [' + state.colsB.join(', ') + ']', margin, listY + 14);
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const my = e.clientY - rect.top;
+    // Pick slider A or B based on vertical position
+    dragging = my < 30 ? 'A' : 'B';
+    handleDrag(e);
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    handleDrag(e);
+  });
+  canvas.addEventListener('mouseup', () => dragging = null);
+  canvas.addEventListener('mouseleave', () => dragging = null);
+
+  function handleDrag(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const margin = 20;
+    const barW = canvas.clientWidth - margin * 2;
+    const v = Math.max(0, Math.min(1, (mx - margin) / barW));
+    if (dragging === 'A') loadA = v;
+    else if (dragging === 'B') loadB = v;
+    draw();
+  }
+
+  draw();
+  window.addEventListener('resize', draw);
+})();
+
+// --- OVERLAP DEMO ---
+(function() {
+  const canvas = document.getElementById('overlap-demo');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const infoEl = document.getElementById('overlap-info');
+  let valueA = 0.30, valueB = 0.35;
+  let dragging = null; // 'A' or 'B'
+
+  const N = 256, W = 41;
+  const resolution = 1.0 / (N - W);
+  const halfW = Math.floor((W - 1) / 2);
+  const padding = halfW;
+
+  function getBucket(value) {
+    const v = Math.max(0, Math.min(1, value));
+    const center = Math.floor((v + resolution / 2) / resolution) + padding;
+    return center - halfW;
+  }
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0, 0, w, h);
+
+    const margin = 16;
+    const bitW = (w - margin * 2) / N;
+    const barH = 28;
+
+    const firstA = getBucket(valueA);
+    const firstB = getBucket(valueB);
+
+    // Count overlap
+    let overlap = 0;
+    for (let i = 0; i < N; i++) {
+      const inA = i >= firstA && i < firstA + W;
+      const inB = i >= firstB && i < firstB + W;
+      if (inA && inB) overlap++;
+    }
+    const overlapPct = W > 0 ? Math.round(overlap / W * 100) : 0;
+
+    // Labels
+    ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#3bf0a0';
+    ctx.fillText('Value A: ' + (valueA * 100).toFixed(1) + '%', margin, 16);
+    ctx.fillStyle = '#ff6b4a';
+    ctx.textAlign = 'center';
+    ctx.fillText('Value B: ' + (valueB * 100).toFixed(1) + '%', w / 2, 16);
+
+    // Overlap stats
+    ctx.textAlign = 'right';
+    ctx.fillStyle = overlapPct === 100 ? '#3bf0a0' : overlapPct > 70 ? '#ffd44a' : '#ff6b4a';
+    ctx.fillText('Overlap: ' + overlap + '/' + W + ' bits (' + overlapPct + '%)', w - margin, 16);
+
+    // Update header info
+    if (infoEl) infoEl.textContent = overlap + '/' + W + ' overlap (' + overlapPct + '%)';
+
+    // Row A
+    const rowAY = 26;
+    ctx.fillStyle = '#3bf0a044'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('A', margin - 12, rowAY + barH / 2 + 3);
+    for (let i = 0; i < N; i++) {
+      const x = margin + i * bitW;
+      const inA = i >= firstA && i < firstA + W;
+      ctx.fillStyle = inA ? '#3bf0a0' : '#1a1a24';
+      ctx.fillRect(x + 0.3, rowAY, bitW - 0.6, barH);
+    }
+    // Position marker A
+    const posA = margin + (firstA + W / 2) * bitW;
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('\u25bc', posA, rowAY - 2);
+
+    // Row B
+    const rowBY = rowAY + barH + 6;
+    ctx.fillStyle = '#ff6b4a44'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('B', margin - 12, rowBY + barH / 2 + 3);
+    for (let i = 0; i < N; i++) {
+      const x = margin + i * bitW;
+      const inB = i >= firstB && i < firstB + W;
+      ctx.fillStyle = inB ? '#ff6b4a' : '#1a1a24';
+      ctx.fillRect(x + 0.3, rowBY, bitW - 0.6, barH);
+    }
+    const posB = margin + (firstB + W / 2) * bitW;
+    ctx.fillStyle = '#ff6b4a'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('\u25bc', posB, rowBY - 2);
+
+    // Overlap row
+    const rowOY = rowBY + barH + 6;
+    ctx.fillStyle = '#6e6e8244'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('\u2229', margin - 12, rowOY + barH / 2 + 3);
+    for (let i = 0; i < N; i++) {
+      const x = margin + i * bitW;
+      const inA = i >= firstA && i < firstA + W;
+      const inB = i >= firstB && i < firstB + W;
+      if (inA && inB) {
+        ctx.fillStyle = '#ffd44a';
+      } else if (inA) {
+        ctx.fillStyle = '#3bf0a033';
+      } else if (inB) {
+        ctx.fillStyle = '#ff6b4a33';
+      } else {
+        ctx.fillStyle = '#111118';
+      }
+      ctx.fillRect(x + 0.3, rowOY, bitW - 0.6, barH);
+    }
+
+    // Legend
+    const legY = rowOY + barH + 16;
+    ctx.font = '10px Outfit'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffd44a';
+    ctx.fillText('\u25a0 shared bits (overlap)', w * 0.25, legY);
+    ctx.fillStyle = '#3bf0a066';
+    ctx.fillText('\u25a0 only in A', w * 0.5, legY);
+    ctx.fillStyle = '#ff6b4a66';
+    ctx.fillText('\u25a0 only in B', w * 0.75, legY);
+
+    // Score estimate
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'center';
+    const scoreEst = overlapPct === 100 ? '0.0 (identical)' : overlapPct > 90 ? '~0.1 (barely different)' : overlapPct > 70 ? '~0.2-0.3 (noticeable)' : overlapPct > 40 ? '~0.5-0.7 (very different)' : '~1.0 (completely new)';
+    ctx.fillText('Estimated anomaly score: ' + scoreEst, w / 2, legY + 16);
+  }
+
+  function getValueFromX(mx) {
+    const margin = 16;
+    const bitW = (canvas.clientWidth - margin * 2) / N;
+    return Math.max(0, Math.min(1, (mx - margin) / (canvas.clientWidth - margin * 2)));
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const v = getValueFromX(mx);
+    // Pick whichever value is closer
+    if (Math.abs(v - valueA) < Math.abs(v - valueB)) {
+      dragging = 'A';
+    } else {
+      dragging = 'B';
+    }
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const v = getValueFromX(e.clientX - rect.left);
+    if (dragging === 'A') valueA = v;
+    else valueB = v;
+    draw();
+  });
+
+  canvas.addEventListener('mouseup', () => dragging = null);
+  canvas.addEventListener('mouseleave', () => dragging = null);
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const v = getValueFromX(e.clientX - rect.left);
+    if (Math.abs(v - valueA) < Math.abs(v - valueB)) valueA = v;
+    else valueB = v;
+    draw();
+  });
+
+  draw(); window.addEventListener('resize', draw);
+})();
+
+// --- RESOLUTION DEMO ---
+(function() {
+  const canvas = document.getElementById('resolution-demo');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0, 0, w, h);
+
+    const margin = 40;
+    const barW = w - margin * 2;
+    const n = 256, ew = 41;
+    const totalBuckets = n - ew; // 215
+    const bucketW = barW / totalBuckets;
+
+    // --- TOP: Full range with bucket marks ---
+    ctx.fillStyle = '#6e6e82'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('Full encoder range: 0% to 100% load \u2192 215 buckets', w / 2, 18);
+
+    const topY = 28;
+    // Draw bucket bar
+    for (let i = 0; i < totalBuckets; i++) {
+      const x = margin + i * bucketW;
+      const loadPct = (i / totalBuckets) * 100;
+      const inRange1 = loadPct >= 29.5 && loadPct <= 30.9; // same bucket zone
+      const inRange2 = loadPct >= 30 && loadPct <= 35;
+      ctx.fillStyle = inRange1 ? '#3bf0a022' : '#1a1a24';
+      ctx.fillRect(x + 0.3, topY, bucketW - 0.6, 14);
+    }
+    // Labels at edges
+    ctx.fillStyle = '#6e6e82'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('0%', margin, topY + 28);
+    ctx.textAlign = 'right';
+    ctx.fillText('100%', margin + barW, topY + 28);
+
+    // --- MIDDLE: Zoomed view of 28-36% ---
+    const zoomY = 70;
+    const zoomMin = 28, zoomMax = 36;
+    const zoomBuckets = Math.round((zoomMax - zoomMin) / 100 * totalBuckets); // ~17 buckets
+    const zBucketW = barW / zoomBuckets;
+
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '12px Outfit'; ctx.textAlign = 'center';
+    ctx.fillText('Zoomed: 28% to 36% load', w / 2, zoomY - 4);
+
+    // Draw zoomed buckets
+    for (let i = 0; i < zoomBuckets; i++) {
+      const x = margin + i * zBucketW;
+      const loadPct = zoomMin + (i / zoomBuckets) * (zoomMax - zoomMin);
+      ctx.fillStyle = '#1e1e2a';
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 0.5;
+      ctx.fillRect(x + 1, zoomY, zBucketW - 2, 30);
+      ctx.strokeRect(x + 1, zoomY, zBucketW - 2, 30);
+
+      // Bucket label (every other)
+      if (i % 2 === 0) {
+        ctx.fillStyle = '#6e6e82'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'center';
+        ctx.fillText(loadPct.toFixed(1) + '%', x + zBucketW / 2, zoomY + 44);
+      }
+    }
+
+    // --- SCENARIO 1: 30.0% to 30.4% (same bucket) ---
+    const sc1Y = zoomY + 60;
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '13px Outfit'; ctx.textAlign = 'left';
+    ctx.fillText('Scenario 1:  30.0% \u2192 30.4%', margin, sc1Y);
+
+    const sc1barY = sc1Y + 10;
+    for (let i = 0; i < zoomBuckets; i++) {
+      const x = margin + i * zBucketW;
+      ctx.fillStyle = '#1a1a24';
+      ctx.fillRect(x + 1, sc1barY, zBucketW - 2, 24);
+    }
+    // Arrow pointing to the bucket that contains both values
+    const buck30sc1 = Math.round((30.2 - zoomMin) / (zoomMax - zoomMin) * zoomBuckets);
+    const arrowX = margin + buck30sc1 * zBucketW + zBucketW / 2;
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('\u25bc both here', arrowX, sc1barY - 4);
+    // Subtle outline on that one bucket
+    ctx.strokeStyle = '#3bf0a066'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(margin + buck30sc1 * zBucketW + 1, sc1barY, zBucketW - 2, 24);
+
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'right';
+    ctx.fillText('\u2713 Same SDR \u2192 invisible to the system. Score: 0.0', w - margin, sc1barY + 38);
+
+    // --- SCENARIO 2: 30% to 35% (~10 buckets) ---
+    const sc2Y = sc1barY + 54;
+    ctx.fillStyle = '#ff6b4a'; ctx.font = '13px Outfit'; ctx.textAlign = 'left';
+    ctx.fillText('Scenario 2:  30% \u2192 35%', margin, sc2Y);
+
+    const sc2barY = sc2Y + 10;
+    // Use same bucket index as scenario 1 for 30%
+    const buck30s2 = buck30sc1;
+    const buck35s2 = Math.round((35 - zoomMin) / (zoomMax - zoomMin) * zoomBuckets);
+
+    for (let i = 0; i < zoomBuckets; i++) {
+      const x = margin + i * zBucketW;
+
+      if (i === buck30s2) {
+        ctx.fillStyle = '#3bf0a0';
+      } else if (i === buck35s2) {
+        ctx.fillStyle = '#ff6b4a';
+      } else if (i > buck30s2 && i < buck35s2) {
+        ctx.fillStyle = '#ffd44a22';
+      } else {
+        ctx.fillStyle = '#1a1a24';
+      }
+      ctx.fillRect(x + 1, sc2barY, zBucketW - 2, 24);
+    }
+
+    // Bracket showing ~10 buckets crossed
+    const bx1 = margin + buck30s2 * zBucketW + zBucketW / 2;
+    const bx2 = margin + buck35s2 * zBucketW + zBucketW / 2;
+    const bracketY = sc2barY + 28;
+
+    ctx.strokeStyle = '#ffd44a88'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bx1, bracketY); ctx.lineTo(bx1, bracketY + 8);
+    ctx.lineTo(bx2, bracketY + 8); ctx.lineTo(bx2, bracketY);
+    ctx.stroke();
+    ctx.fillStyle = '#ffd44a'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('~10 buckets crossed', (bx1 + bx2) / 2, bracketY + 22);
+
+    // Labels
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('before', bx1, sc2barY - 4);
+    ctx.fillStyle = '#ff6b4a';
+    ctx.fillText('after', bx2, sc2barY - 4);
+
+    ctx.fillStyle = '#ff6b4a'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'right';
+    ctx.fillText('\u2717 SDR shifted 10 buckets, but w=41 means 31 of 41 bits still overlap (76%)', w - margin, bracketY + 38);
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px JetBrains Mono';
+    ctx.fillText('SP changes ~2-3 of 10 columns \u2192 Score: 0.2-0.3 (not 1.0)', w - margin, bracketY + 54);
+  }
+  draw(); window.addEventListener('resize', draw);
+})();
+
+// --- SP WIRING ---
+(function() {
+  const canvas = document.getElementById('sp-wiring');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Deterministic pseudo-random from seed
+  function seededRandom(seed) {
+    let s = seed;
+    return function() { s = (s * 16807 + 0) % 2147483647; return s / 2147483647; };
+  }
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0, 0, w, h);
+
+    const numInputBits = 40; // simplified (represents 256)
+    const numCols = 3;
+    const inputY = 40;
+    const colY = h - 100;
+    const margin = 60;
+    const inputW = w - margin * 2;
+    const bitW = inputW / numInputBits;
+
+    // Encoder active bits (simulating w=41 on 256, scaled to 40 bits: ~6 active)
+    const activeStart = 12;
+    const activeEnd = 18;
+
+    // Draw input bits row
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('Encoder Output (256 input bits, 41 ON)', w / 2, 22);
+
+    for (let i = 0; i < numInputBits; i++) {
+      const x = margin + i * bitW;
+      const active = i >= activeStart && i < activeEnd;
+      ctx.fillStyle = active ? '#3bf0a0' : '#1e1e2a';
+      ctx.fillRect(x + 1, inputY, bitW - 2, 14);
+    }
+
+    // Three columns at the bottom with different random wiring
+    const colColors = ['#3bf0a0', '#2ad4ff', '#a87bff'];
+    const colLabels = ['Column A', 'Column B', 'Column C'];
+    const colX = [w * 0.2, w * 0.5, w * 0.8];
+    const rands = [seededRandom(42), seededRandom(137), seededRandom(999)];
+
+    for (let c = 0; c < numCols; c++) {
+      const cx = colX[c];
+      const rand = rands[c];
+      const color = colColors[c];
+
+      // Draw column box
+      ctx.fillStyle = '#1a1a2a'; ctx.strokeStyle = color + '66'; ctx.lineWidth = 1.5;
+      ctx.fillRect(cx - 30, colY - 10, 60, 36);
+      ctx.strokeRect(cx - 30, colY - 10, 60, 36);
+      ctx.fillStyle = color; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'center';
+      ctx.fillText(colLabels[c], cx, colY + 14);
+
+      // Random connections to ~50% of input bits
+      let overlapCount = 0;
+      let connCount = 0;
+      for (let i = 0; i < numInputBits; i++) {
+        if (rand() < 0.5) {
+          connCount++;
+          const bitX = margin + i * bitW + bitW / 2;
+          const bitActive = i >= activeStart && i < activeEnd;
+
+          if (bitActive) {
+            overlapCount++;
+            ctx.strokeStyle = color + 'aa';
+            ctx.lineWidth = 1.5;
+          } else {
+            ctx.strokeStyle = color + '18';
+            ctx.lineWidth = 0.5;
+          }
+
+          ctx.beginPath();
+          ctx.moveTo(bitX, inputY + 14);
+          ctx.lineTo(cx, colY - 10);
+          ctx.stroke();
+        }
+      }
+
+      // Overlap score label
+      ctx.fillStyle = color; ctx.font = '12px JetBrains Mono'; ctx.textAlign = 'center';
+      ctx.fillText('overlap: ' + overlapCount, cx, colY + 46);
+      ctx.fillStyle = '#6e6e82'; ctx.font = '9px JetBrains Mono';
+      ctx.fillText('(' + connCount + ' wires total)', cx, colY + 60);
+    }
+
+    // Legend at bottom with space
+    ctx.font = '10px Outfit'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#6e6e82';
+    ctx.fillText('Bright lines = wire touches an active (green) input bit \u2192 counts toward overlap', w / 2, h - 14);
+    ctx.fillText('Dim lines = wire exists but touches an inactive bit \u2192 doesn\'t count', w / 2, h - 0);
+  }
+  draw(); window.addEventListener('resize', draw);
+})();
+
+// --- TM ANATOMY ---
+(function() {
+  const canvas = document.getElementById('tm-anatomy');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0, 0, w, h);
+
+    const cellSize = 18, gap = 3, colGap = 40, cellsPerCol = 16;
+    const numCols = 5;
+    const startX = 50, startY = 40;
+    const colTotalW = cellSize + colGap;
+
+    // Draw 5 columns with 16 cells each
+    for (let c = 0; c < numCols; c++) {
+      const cx = startX + c * colTotalW;
+      ctx.fillStyle = '#6e6e82'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'center';
+      ctx.fillText('Col ' + c, cx + cellSize / 2, startY - 10);
+      for (let r = 0; r < cellsPerCol; r++) {
+        const cy = startY + r * (cellSize + gap);
+        ctx.fillStyle = '#1e1e2a';
+        ctx.strokeStyle = '#2a2a3a'; ctx.lineWidth = 0.5;
+        ctx.fillRect(cx, cy, cellSize, cellSize);
+        ctx.strokeRect(cx, cy, cellSize, cellSize);
+      }
+    }
+
+    // Highlight one cell
+    const hc = 2, hr = 5;
+    const hx = startX + hc * colTotalW;
+    const hy = startY + hr * (cellSize + gap);
+    ctx.fillStyle = '#3bf0a0';
+    ctx.fillRect(hx, hy, cellSize, cellSize);
+
+    // Callout area — right side
+    const segX = startX + numCols * colTotalW + 50;
+
+    // Arrow from cell to callout
+    ctx.strokeStyle = '#3bf0a066'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(hx + cellSize + 4, hy + cellSize / 2);
+    ctx.lineTo(segX - 16, hy + cellSize / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Cell label
+    ctx.fillStyle = '#eeeef4'; ctx.font = '15px Outfit'; ctx.textAlign = 'left';
+    ctx.fillText('Cell [column 2, cell 5]', segX, hy - 6);
+
+    // Segment A box
+    const boxY = hy + 10;
+    ctx.fillStyle = '#1a1a2a'; ctx.strokeStyle = '#3bf0a044'; ctx.lineWidth = 1;
+    ctx.fillRect(segX, boxY, w - segX - 30, 90);
+    ctx.strokeRect(segX, boxY, w - segX - 30, 90);
+
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '12px JetBrains Mono';
+    ctx.fillText('Segment A (prediction rule #1)', segX + 10, boxY + 18);
+
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px JetBrains Mono';
+    ctx.fillText('synapse \u2192 cell[0,3]  perm: 0.45', segX + 14, boxY + 38);
+    ctx.fillText('synapse \u2192 cell[1,7]  perm: 0.38', segX + 14, boxY + 56);
+    ctx.fillText('synapse \u2192 cell[4,2]  perm: 0.52', segX + 14, boxY + 74);
+
+    // Segment B box
+    const box2Y = boxY + 100;
+    ctx.fillStyle = '#1a1a2a'; ctx.strokeStyle = '#a87bff44'; ctx.lineWidth = 1;
+    ctx.fillRect(segX, box2Y, w - segX - 30, 72);
+    ctx.strokeRect(segX, box2Y, w - segX - 30, 72);
+
+    ctx.fillStyle = '#a87bff'; ctx.font = '12px JetBrains Mono';
+    ctx.fillText('Segment B (prediction rule #2)', segX + 10, box2Y + 18);
+
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px JetBrains Mono';
+    ctx.fillText('synapse \u2192 cell[3,1]  perm: 0.41', segX + 14, box2Y + 38);
+    ctx.fillText('synapse \u2192 cell[4,9]  perm: 0.33', segX + 14, box2Y + 56);
+
+    // Explanation below
+    const explY = box2Y + 90;
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '12px Outfit';
+    ctx.fillText('Segment A says:', segX, explY);
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px Outfit';
+    ctx.fillText('"If cells [0,3], [1,7], [4,2] were all active last', segX + 8, explY + 18);
+    ctx.fillText(' timestep \u2192 predict that I will be active next"', segX + 8, explY + 34);
+
+    ctx.fillStyle = '#a87bff'; ctx.font = '12px Outfit';
+    ctx.fillText('Segment B says:', segX, explY + 58);
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px Outfit';
+    ctx.fillText('"If cells [3,1], [4,9] were active \u2192 predict me"', segX + 8, explY + 76);
+    ctx.fillText('(different context, same cell)', segX + 8, explY + 92);
+
+    // Left side annotations
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'right';
+    ctx.fillText('16 cells', startX - 10, startY + 8 * (cellSize + gap));
+    ctx.fillText('per col \u2193', startX - 10, startY + 8 * (cellSize + gap) + 14);
+
+    ctx.textAlign = 'center';
+    ctx.fillText('5 of 256 columns shown', startX + (numCols * colTotalW) / 2, startY + cellsPerCol * (cellSize + gap) + 16);
+  }
+  draw(); window.addEventListener('resize', draw);
+})();
+
+// --- TM PREDICT ---
+(function() {
+  const canvas = document.getElementById('tm-predict');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0,0,w,h);
+    const cellSize = 10, gap = 2, colGap = 30, cellsPerCol = 16;
+    const cols = [
+      { label: 'Col A', state: 'predicted', predCell: 3 },
+      { label: 'Col B', state: 'predicted', predCell: 11 },
+      { label: 'Col C', state: 'burst', predCell: -1, winCell: 7 },
+      { label: 'Col D', state: 'predicted', predCell: 5 },
+      { label: 'Col E', state: 'predicted', predCell: 8 },
+    ];
+    const startX = 30;
+    for (let c = 0; c < cols.length; c++) {
+      const col = cols[c];
+      const cx = startX + c * (cellSize + colGap) * 2;
+      // Column label
+      ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'center';
+      ctx.fillStyle = col.state === 'burst' ? '#ff6b4a' : '#3bf0a0';
+      ctx.fillText(col.label, cx + cellSize/2, 18);
+      ctx.fillText(col.state === 'burst' ? 'BURST!' : 'Predicted', cx + cellSize/2, h - 8);
+      for (let r = 0; r < cellsPerCol; r++) {
+        const cy = 26 + r * (cellSize + gap);
+        if (col.state === 'burst') {
+          ctx.fillStyle = r === col.winCell ? '#ffcc00' : '#ff6b4a44';
+        } else if (r === col.predCell) {
+          ctx.fillStyle = '#3bf0a0';
+        } else {
+          ctx.fillStyle = '#1a1a24';
+        }
+        ctx.fillRect(cx, cy, cellSize, cellSize);
+      }
+      // Winner label for burst
+      if (col.state === 'burst') {
+        ctx.font = '8px JetBrains Mono'; ctx.fillStyle = '#ffcc00'; ctx.textAlign = 'left';
+        ctx.fillText('\u2190 winner', cx + cellSize + 4, 26 + col.winCell * (cellSize + gap) + 9);
+      }
+      if (col.state === 'predicted') {
+        ctx.font = '8px JetBrains Mono'; ctx.fillStyle = '#3bf0a0'; ctx.textAlign = 'left';
+        ctx.fillText('\u2190 predicted', cx + cellSize + 4, 26 + col.predCell * (cellSize + gap) + 9);
+      }
+    }
+    // Legend
+    ctx.font = '11px Outfit'; ctx.textAlign = 'right'; ctx.fillStyle = '#6e6e82';
+    ctx.fillText('8 of 10 columns predicted correctly = anomaly score 0.2', w - 20, h - 8);
+  }
+  draw(); window.addEventListener('resize', draw);
+})();
+
+// --- TM LEARN BURST ---
+(function() {
+  const canvas = document.getElementById('tm-learn-burst');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0, 0, w, h);
+
+    // Layout
+    const leftX = 80;
+    const midX = w * 0.42;
+    const rightX = w * 0.65;
+    const cellSize = 14, gap = 3;
+
+    // Previous timestep winners (left side)
+    const prevWinners = [
+      { x: leftX, y: 80, label: 'Winner A (prev timestep)' },
+      { x: leftX, y: 160, label: 'Winner B (prev timestep)' },
+      { x: leftX, y: 240, label: 'Winner C (prev timestep)' },
+    ];
+
+    ctx.fillStyle = '#6e6e82'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('Previous Timestep', leftX, 30);
+    ctx.fillText('Winners', leftX, 46);
+
+    for (const pw of prevWinners) {
+      ctx.fillStyle = '#ffcc00'; ctx.fillRect(pw.x - 10, pw.y - 10, 20, 20);
+      ctx.fillStyle = '#c8c8d4'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'left';
+      ctx.fillText(pw.label, pw.x + 18, pw.y + 5);
+    }
+
+    // Bursting column (center)
+    const winnerCell = 5;
+    const burstTopY = 60;
+
+    ctx.fillStyle = '#ff6b4a'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('Bursting Column', midX + cellSize / 2, 30);
+    ctx.fillText('(no prediction existed)', midX + cellSize / 2, 46);
+
+    for (let r = 0; r < 16; r++) {
+      const cy = burstTopY + r * (cellSize + gap);
+      ctx.fillStyle = r === winnerCell ? '#ffcc00' : '#ff6b4a33';
+      ctx.fillRect(midX, cy, cellSize, cellSize);
+    }
+
+    // Winner label above the winner cell
+    const winnerY = burstTopY + winnerCell * (cellSize + gap) + cellSize / 2;
+    ctx.fillStyle = '#ffcc00'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('\u2190 winner cell', midX + cellSize + 8, winnerY - 6);
+    ctx.fillText('   (fewest segments)', midX + cellSize + 8, winnerY + 8);
+
+    // Draw new synapses being created
+    for (const pw of prevWinners) {
+      ctx.strokeStyle = '#3bf0a0'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(pw.x + 10, pw.y); ctx.lineTo(midX, winnerY); ctx.stroke();
+      // Permanence label on each line
+      const mx = (pw.x + 10 + midX) / 2, my = (pw.y + winnerY) / 2;
+      ctx.fillStyle = '#3bf0a0'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center';
+      ctx.fillText('perm=0.35', mx - 10, my - 6);
+    }
+
+    // Right side explanation (well separated)
+    ctx.fillStyle = '#eeeef4'; ctx.font = '14px Outfit'; ctx.textAlign = 'left';
+    ctx.fillText('New Segment Created:', rightX, 80);
+
+    ctx.fillStyle = '#6e6e82'; ctx.font = '11px Outfit';
+    ctx.fillText('"If winners A, B, C were', rightX + 8, 104);
+    ctx.fillText(' active last timestep', rightX + 8, 122);
+    ctx.fillText(' \u2192 predict this cell next"', rightX + 8, 140);
+
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '12px JetBrains Mono';
+    ctx.fillText('All synapses start at 0.35', rightX, 180);
+    ctx.fillText('Connected threshold: 0.25', rightX, 200);
+    ctx.fillText('\u2192 immediately connected!', rightX, 220);
+
+    ctx.fillStyle = '#6e6e82'; ctx.font = '11px Outfit';
+    ctx.fillText('Next time the TM sees winners', rightX, 260);
+    ctx.fillText('A, B, C active, this cell will', rightX, 278);
+    ctx.fillText('predict instead of bursting.', rightX, 296);
+  }
+  draw(); window.addEventListener('resize', draw);
+})();
+
+// --- TM LEARN REINFORCE ---
+(function() {
+  const canvas = document.getElementById('tm-learn-reinforce');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0,0,w,h);
+    // Show 5 synapses with before/after permanences
+    const synapses = [
+      { label: 'Syn\u21921 (was active)', before: 0.35, after: 0.45, active: true },
+      { label: 'Syn\u21922 (was active)', before: 0.42, after: 0.52, active: true },
+      { label: 'Syn\u21923 (was active)', before: 0.50, after: 0.60, active: true },
+      { label: 'Syn\u21924 (NOT active)', before: 0.38, after: 0.33, active: false },
+      { label: 'Syn\u21925 (NOT active)', before: 0.28, after: 0.23, active: false },
+    ];
+    const barH = 18, gap = 8, startY = 20, labelW = 160, barW = w - labelW - 100;
+    const threshold = 0.25;
+    for (let i = 0; i < synapses.length; i++) {
+      const s = synapses[i];
+      const y = startY + i * (barH * 2 + gap);
+      // Label
+      ctx.fillStyle = s.active ? '#3bf0a0' : '#ff6b4a88'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'left';
+      ctx.fillText(s.label, 10, y + 12);
+      // Before bar
+      ctx.fillStyle = '#2a2a3a'; ctx.fillRect(labelW, y, barW, barH);
+      ctx.fillStyle = '#6e6e8288'; ctx.fillRect(labelW, y, barW * s.before, barH);
+      ctx.fillStyle = '#6e6e82'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'right';
+      ctx.fillText(s.before.toFixed(2), w - 30, y + 12);
+      // After bar
+      ctx.fillStyle = '#2a2a3a'; ctx.fillRect(labelW, y + barH, barW, barH);
+      ctx.fillStyle = s.active ? '#3bf0a088' : '#ff6b4a44';
+      ctx.fillRect(labelW, y + barH, barW * s.after, barH);
+      ctx.fillStyle = s.active ? '#3bf0a0' : '#ff6b4a'; ctx.textAlign = 'right';
+      ctx.fillText(s.after.toFixed(2) + (s.active ? ' +0.10' : ' -0.05'), w - 30, y + barH + 12);
+      // Threshold line
+      ctx.strokeStyle = '#ffd44a44'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(labelW + barW * threshold, y); ctx.lineTo(labelW + barW * threshold, y + barH * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    // Threshold label
+    ctx.fillStyle = '#ffd44a88'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('threshold 0.25', labelW + barW * threshold, startY + synapses.length * (barH * 2 + gap) + 4);
+  }
+  draw(); window.addEventListener('resize', draw);
+})();
+
+// --- TM PERMANENCE LIFECYCLE ---
+(function() {
+  const canvas = document.getElementById('tm-permanence');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0,0,w,h);
+    const margin = { left: 50, right: 20, top: 20, bottom: 30 };
+    const pw = w - margin.left - margin.right, ph = h - margin.top - margin.bottom;
+    // Simulate permanence over time
+    const steps = 40;
+    const vals = [0.35]; // start at initialPermanence
+    // Sequence: correct, correct, correct, wrong, correct, correct, wrong, wrong, correct...
+    const outcomes = [1,1,1,1,0,1,1,1,0,0,1,1,1,1,1,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    for (let i = 0; i < steps - 1; i++) {
+      let v = vals[i];
+      v += outcomes[i] ? 0.10 : -0.05;
+      v = Math.max(0, Math.min(1, v));
+      vals.push(v);
+    }
+    // Draw axes
+    ctx.strokeStyle = '#2a2a3a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, margin.top + ph); ctx.lineTo(margin.left + pw, margin.top + ph); ctx.stroke();
+    // Threshold line
+    const threshY = margin.top + ph * (1 - 0.25);
+    ctx.strokeStyle = '#ffd44a44'; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(margin.left, threshY); ctx.lineTo(margin.left + pw, threshY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffd44a88'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'right';
+    ctx.fillText('connected (0.25)', margin.left - 4, threshY + 3);
+    // Draw permanence line
+    ctx.beginPath(); ctx.strokeStyle = '#3bf0a0'; ctx.lineWidth = 2;
+    for (let i = 0; i < vals.length; i++) {
+      const x = margin.left + (i / (steps - 1)) * pw;
+      const y = margin.top + ph * (1 - vals[i]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    // Dots with color
+    for (let i = 0; i < vals.length; i++) {
+      const x = margin.left + (i / (steps - 1)) * pw;
+      const y = margin.top + ph * (1 - vals[i]);
+      ctx.fillStyle = outcomes[i] ? '#3bf0a0' : '#ff6b4a';
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    // Labels
+    ctx.fillStyle = '#6e6e82'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('timestep \u2192', margin.left + pw/2, h - 4);
+    ctx.save(); ctx.translate(12, margin.top + ph/2); ctx.rotate(-Math.PI/2);
+    ctx.fillText('permanence', 0, 0); ctx.restore();
+    ctx.fillStyle = '#3bf0a0'; ctx.fillText('\u25cf correct (+0.10)', margin.left + pw * 0.3, margin.top + 12);
+    ctx.fillStyle = '#ff6b4a'; ctx.fillText('\u25cf wrong (-0.05)', margin.left + pw * 0.6, margin.top + 12);
+  }
+  draw(); window.addEventListener('resize', draw);
+})();
+
+// --- MULTI-ENCODER DEMO ---
+(function() {
+  const canvas = document.getElementById('multi-enc-demo');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0, 0, w, h);
+
+    const margin = 20;
+    const bitsPerSignal = 60; // simplified
+    const totalBits = bitsPerSignal * 3;
+    const bitW = (w - margin * 2) / totalBits;
+    const signals = [
+      { name: 'XM_load', color: '#3bf0a0', activeStart: 18, w: 10 },
+      { name: 'YM_load', color: '#2ad4ff', activeStart: 14, w: 10 },
+      { name: 'ZM_load', color: '#a87bff', activeStart: 11, w: 10 },
+    ];
+
+    // Title row
+    const rowY = 30;
+    signals.forEach((sig, s) => {
+      const startBit = s * bitsPerSignal;
+      const regionX = margin + startBit * bitW;
+      const regionW = bitsPerSignal * bitW;
+
+      // Signal label
+      ctx.fillStyle = sig.color; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'center';
+      ctx.fillText(sig.name, regionX + regionW / 2, 18);
+
+      // Bracket
+      ctx.strokeStyle = sig.color + '44'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(regionX + 2, 22); ctx.lineTo(regionX + 2, 26);
+      ctx.lineTo(regionX + regionW - 2, 26);
+      ctx.lineTo(regionX + regionW - 2, 22);
+      ctx.stroke();
+
+      // Bits
+      for (let i = 0; i < bitsPerSignal; i++) {
+        const x = regionX + i * bitW;
+        const active = i >= sig.activeStart && i < sig.activeStart + sig.w;
+        ctx.fillStyle = active ? sig.color : '#1a1a24';
+        ctx.fillRect(x + 0.5, rowY, bitW - 1, 20);
+      }
+    });
+
+    // Separator lines between signals
+    for (let s = 1; s < 3; s++) {
+      const x = margin + s * bitsPerSignal * bitW;
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x, rowY - 4); ctx.lineTo(x, rowY + 24); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Arrow down to combined
+    const arrowY = rowY + 30;
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px Outfit'; ctx.textAlign = 'center';
+    ctx.fillText('\u25bc  concatenated into one 768-bit SDR  \u25bc', w / 2, arrowY);
+
+    // Combined SDR
+    const combY = arrowY + 12;
+    for (let s = 0; s < 3; s++) {
+      const sig = signals[s];
+      for (let i = 0; i < bitsPerSignal; i++) {
+        const x = margin + (s * bitsPerSignal + i) * bitW;
+        const active = i >= sig.activeStart && i < sig.activeStart + sig.w;
+        ctx.fillStyle = active ? sig.color + '88' : '#111118';
+        ctx.fillRect(x + 0.5, combY, bitW - 1, 16);
+      }
+    }
+
+    // Labels
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('bit 0', margin, combY + 32);
+    ctx.textAlign = 'right';
+    ctx.fillText('bit 767', w - margin, combY + 32);
+    ctx.textAlign = 'center';
+    ctx.fillText('123 of 768 bits active (3 \u00d7 41)', w / 2, combY + 32);
+
+    // Arrow to SP
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px Outfit';
+    ctx.fillText('\u25bc  feeds into its own SP (768 columns, 15 active) and TM  \u25bc', w / 2, combY + 50);
+  }
+  draw(); window.addEventListener('resize', draw);
+})();
+
+// --- LIKELIHOOD DEMO (interactive) ---
+(function() {
+  const canvas = document.getElementById('likelihood-demo');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const W = 30; // visible window
+  const Wp = 3; // short-term window
+  const THRESHOLD = 0.999; // simplified for demo (real system uses 0.99999)
+  let scores = [];
+  let currentScore = 0.12;
+  let dragging = false;
+
+  // Seed with normal baseline scores
+  function reset() {
+    scores = [];
+    for (let i = 0; i < W; i++) scores.push(0.05 + Math.random() * 0.12);
+    currentScore = 0.12;
+    draw();
+  }
+
+  function addScore(s) {
+    scores.push(Math.max(0, Math.min(1, s)));
+    if (scores.length > 80) scores.shift();
+    draw();
+  }
+
+  function qFunction(z) {
+    if (z < -8) return 1; if (z > 8) return 0;
+    const t = 1 / (1 + 0.3275911 * Math.abs(z));
+    let erf = 1 - (((((1.061405429*t - 1.453152027)*t) + 1.421413741)*t - 0.284496736)*t + 0.254829592)*t * Math.exp(-z*z);
+    if (z < 0) erf = -erf;
+    return 0.5 * (1 - erf);
+  }
+
+  function computeLikelihood() {
+    if (scores.length < 5) return { mean: 0, std: 0, shortMean: 0, z: 0, q: 0.5, likelihood: 0 };
+    const windowScores = scores.slice(-W);
+    const mean = windowScores.reduce((a,b) => a+b, 0) / windowScores.length;
+    const variance = windowScores.reduce((a,b) => a + (b-mean)*(b-mean), 0) / (windowScores.length - 1);
+    const std = Math.sqrt(variance);
+    const shortScores = scores.slice(-Wp);
+    const shortMean = shortScores.reduce((a,b) => a+b, 0) / shortScores.length;
+    const z = std > 0.0001 ? (shortMean - mean) / std : 0;
+    const q = qFunction(z);
+    const likelihood = 1 - q;
+    return { mean, std, shortMean, z, q, likelihood };
+  }
+
+  function draw() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr; ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#13131a'; ctx.fillRect(0, 0, w, h);
+
+    const margin = 24;
+    const stats = computeLikelihood();
+    const isAnomaly = stats.likelihood >= THRESHOLD;
+
+    // --- Section 1: Score history bar chart ---
+    const chartH = 100, chartY = 16;
+    const barCount = Math.min(scores.length, 40);
+    const barW = (w - margin * 2) / 40;
+
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('Raw Anomaly Scores (last ' + scores.length + ')', margin, chartY);
+
+    for (let i = 0; i < barCount; i++) {
+      const si = scores.length - barCount + i;
+      const s = scores[si];
+      const x = margin + i * barW;
+      const bh = s * chartH;
+      const isShortTerm = si >= scores.length - Wp;
+      ctx.fillStyle = isShortTerm ? '#ffd44a' : '#2ad4ff66';
+      ctx.fillRect(x + 1, chartY + 6 + chartH - bh, barW - 2, bh);
+    }
+
+    // Mean line
+    const meanLineY = chartY + 6 + chartH - stats.mean * chartH;
+    ctx.strokeStyle = '#3bf0a066'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(margin, meanLineY); ctx.lineTo(w - margin, meanLineY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#3bf0a088'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('\u03bc=' + stats.mean.toFixed(3), margin, meanLineY - 4);
+
+    // Legend
+    ctx.fillStyle = '#2ad4ff66'; ctx.fillRect(w - margin - 180, chartY, 8, 8);
+    ctx.fillStyle = '#6e6e82'; ctx.font = '8px Outfit'; ctx.textAlign = 'left';
+    ctx.fillText('history (W=' + W + ')', w - margin - 168, chartY + 8);
+    ctx.fillStyle = '#ffd44a'; ctx.fillRect(w - margin - 90, chartY, 8, 8);
+    ctx.fillStyle = '#6e6e82';
+    ctx.fillText("short-term (W'=" + Wp + ')', w - margin - 78, chartY + 8);
+
+    // --- Section 2: Score slider ---
+    const sliderY = chartY + chartH + 22;
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('Your score:', margin, sliderY);
+    ctx.fillStyle = currentScore > 0.5 ? '#ff6b4a' : currentScore > 0.2 ? '#ffd44a' : '#3bf0a0';
+    ctx.font = 'bold 14px JetBrains Mono';
+    ctx.fillText(currentScore.toFixed(3), margin + 100, sliderY);
+
+    const slBarY = sliderY + 8;
+    const slBarW = w - margin * 2;
+    ctx.fillStyle = '#2a2a3a'; ctx.fillRect(margin, slBarY, slBarW, 8);
+    const knobX = margin + currentScore * slBarW;
+    const knobColor = currentScore > 0.5 ? '#ff6b4a' : currentScore > 0.2 ? '#ffd44a' : '#3bf0a0';
+    ctx.fillStyle = knobColor; ctx.fillRect(margin, slBarY, knobX - margin, 8);
+    ctx.beginPath(); ctx.arc(knobX, slBarY + 4, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#6e6e82'; ctx.font = '8px JetBrains Mono';
+    ctx.textAlign = 'left'; ctx.fillText('0', margin, slBarY + 22);
+    ctx.textAlign = 'right'; ctx.fillText('1.0', margin + slBarW, slBarY + 22);
+    ctx.textAlign = 'center'; ctx.fillText('drag to set score, then click a button to add it', w / 2, slBarY + 22);
+
+    // --- Section 3: Calculator ---
+    const calcY = slBarY + 36;
+    const calcX = margin;
+    const gaussX = w * 0.48;
+
+    ctx.fillStyle = '#1a1a24'; ctx.fillRect(calcX, calcY, w - margin * 2, h - calcY - 10);
+    ctx.strokeStyle = '#2a2a3a'; ctx.strokeRect(calcX, calcY, w - margin * 2, h - calcY - 10);
+
+    // Left side: math
+    const lx = calcX + 16;
+    let ly = calcY + 20;
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '12px Outfit'; ctx.textAlign = 'left';
+    ctx.fillText('Likelihood Calculator', lx, ly);
+
+    ly += 24;
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px JetBrains Mono';
+    ctx.fillText('Window mean (\u03bc):', lx, ly);
+    ctx.fillStyle = '#3bf0a0'; ctx.fillText(stats.mean.toFixed(4), lx + 160, ly);
+
+    ly += 16;
+    ctx.fillStyle = '#6e6e82';
+    ctx.fillText('Window std  (\u03c3):', lx, ly);
+    ctx.fillStyle = '#3bf0a0'; ctx.fillText(stats.std.toFixed(4), lx + 160, ly);
+
+    ly += 16;
+    ctx.fillStyle = '#6e6e82';
+    ctx.fillText('Short-term  (\u03bc\u0303):', lx, ly);
+    ctx.fillStyle = '#ffd44a'; ctx.fillText(stats.shortMean.toFixed(4), lx + 160, ly);
+
+    ly += 22;
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px JetBrains Mono';
+    ctx.fillText('z = (\u03bc\u0303 - \u03bc) / \u03c3', lx, ly);
+
+    ly += 16;
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '11px JetBrains Mono';
+    ctx.fillText('  = (' + stats.shortMean.toFixed(3) + ' - ' + stats.mean.toFixed(3) + ') / ' + stats.std.toFixed(3), lx, ly);
+
+    ly += 16;
+    ctx.fillStyle = '#eeeef4'; ctx.font = 'bold 13px JetBrains Mono';
+    ctx.fillText('  = ' + stats.z.toFixed(2), lx, ly);
+
+    ly += 22;
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px JetBrains Mono';
+    ctx.fillText('Q(' + stats.z.toFixed(2) + ') = ' + stats.q.toExponential(2), lx, ly);
+
+    ly += 16;
+    ctx.fillStyle = '#eeeef4'; ctx.font = '11px JetBrains Mono';
+    ctx.fillText('Likelihood = 1 - Q(z) = ' + stats.likelihood.toFixed(6), lx, ly);
+
+    ly += 16;
+    ctx.fillStyle = '#6e6e82'; ctx.font = '10px JetBrains Mono';
+    ctx.fillText('Threshold: ' + THRESHOLD + ' (demo; real=0.99999)', lx, ly);
+
+    // Result
+    ly += 26;
+    if (isAnomaly) {
+      ctx.fillStyle = '#ff6b4a22'; ctx.fillRect(lx - 4, ly - 14, 200, 22);
+      ctx.fillStyle = '#ff6b4a'; ctx.font = 'bold 13px JetBrains Mono';
+      ctx.fillText('\u26a0 ANOMALY DETECTED', lx, ly);
+    } else {
+      ctx.fillStyle = '#3bf0a022'; ctx.fillRect(lx - 4, ly - 14, 200, 22);
+      ctx.fillStyle = '#3bf0a0'; ctx.font = 'bold 13px JetBrains Mono';
+      ctx.fillText('\u2713 NORMAL', lx, ly);
+    }
+
+    // Right side: Gaussian curve
+    const gx = gaussX, gy = calcY + 20;
+    const gw = w - margin - gaussX - 16, gh = h - calcY - 40;
+
+    ctx.fillStyle = '#c8c8d4'; ctx.font = '10px Outfit'; ctx.textAlign = 'center';
+    ctx.fillText('Error Distribution', gx + gw / 2, gy);
+
+    // Draw curve
+    const gPlotY = gy + 12, gPlotH = gh - 20;
+    const viewMin = Math.max(0, stats.mean - stats.std * 5);
+    const viewMax = Math.min(1, stats.mean + stats.std * 8);
+    const viewRange = Math.max(viewMax - viewMin, 0.05);
+
+    // Filled curve
+    ctx.beginPath();
+    for (let px = 0; px <= gw; px++) {
+      const val = viewMin + (px / gw) * viewRange;
+      const z = stats.std > 0.0001 ? (val - stats.mean) / stats.std : 0;
+      const y = Math.exp(-0.5 * z * z);
+      const cy = gPlotY + gPlotH * (1 - y);
+      if (px === 0) ctx.moveTo(gx + px, cy); else ctx.lineTo(gx + px, cy);
+    }
+    ctx.lineTo(gx + gw, gPlotY + gPlotH);
+    ctx.lineTo(gx, gPlotY + gPlotH);
+    ctx.fillStyle = '#2ad4ff15'; ctx.fill();
+
+    // Curve line
+    ctx.beginPath();
+    for (let px = 0; px <= gw; px++) {
+      const val = viewMin + (px / gw) * viewRange;
+      const z = stats.std > 0.0001 ? (val - stats.mean) / stats.std : 0;
+      const y = Math.exp(-0.5 * z * z);
+      const cy = gPlotY + gPlotH * (1 - y);
+      if (px === 0) ctx.moveTo(gx + px, cy); else ctx.lineTo(gx + px, cy);
+    }
+    ctx.strokeStyle = '#2ad4ff'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // Tail area (from short-term mean to right)
+    if (stats.shortMean > stats.mean) {
+      ctx.beginPath();
+      const startPx = Math.max(0, ((stats.shortMean - viewMin) / viewRange) * gw);
+      for (let px = Math.floor(startPx); px <= gw; px++) {
+        const val = viewMin + (px / gw) * viewRange;
+        const z = stats.std > 0.0001 ? (val - stats.mean) / stats.std : 0;
+        const y = Math.exp(-0.5 * z * z);
+        const cy = gPlotY + gPlotH * (1 - y);
+        if (px === Math.floor(startPx)) { ctx.moveTo(gx + px, gPlotY + gPlotH); ctx.lineTo(gx + px, cy); }
+        else ctx.lineTo(gx + px, cy);
+      }
+      ctx.lineTo(gx + gw, gPlotY + gPlotH);
+      ctx.fillStyle = isAnomaly ? 'rgba(255,107,74,0.25)' : 'rgba(255,212,74,0.15)';
+      ctx.fill();
+    }
+
+    // Mean marker
+    const meanPx = gx + ((stats.mean - viewMin) / viewRange) * gw;
+    ctx.strokeStyle = '#3bf0a066'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(meanPx, gPlotY); ctx.lineTo(meanPx, gPlotY + gPlotH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#3bf0a0'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center';
+    ctx.fillText('\u03bc', meanPx, gPlotY + gPlotH + 12);
+
+    // Short-term mean marker
+    const stPx = gx + ((stats.shortMean - viewMin) / viewRange) * gw;
+    if (stPx > gx && stPx < gx + gw) {
+      ctx.strokeStyle = '#ffd44a88'; ctx.lineWidth = 2; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(stPx, gPlotY); ctx.lineTo(stPx, gPlotY + gPlotH); ctx.stroke();
+      ctx.fillStyle = '#ffd44a'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center';
+      ctx.fillText('\u03bc\u0303', stPx, gPlotY + gPlotH + 12);
+      ctx.fillText('your score', stPx, gPlotY - 4);
+    }
+
+    // Tail label
+    if (stats.shortMean > stats.mean && stPx < gx + gw - 20) {
+      ctx.fillStyle = isAnomaly ? '#ff6b4a' : '#ffd44a88'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'left';
+      ctx.fillText('tail area', Math.min(stPx + 4, gx + gw - 50), gPlotY + gPlotH / 2);
+      ctx.fillText('= Q(z)', Math.min(stPx + 4, gx + gw - 50), gPlotY + gPlotH / 2 + 12);
+    }
+  }
+
+  // Slider interaction
+  canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const my = e.clientY - rect.top;
+    const sliderY = 100 + 22 + 8; // approximate slider Y
+    if (Math.abs(my - sliderY) < 20) { dragging = true; handleSlider(e); }
+  });
+  canvas.addEventListener('mousemove', (e) => { if (dragging) handleSlider(e); });
+  canvas.addEventListener('mouseup', () => dragging = false);
+  canvas.addEventListener('mouseleave', () => dragging = false);
+
+  function handleSlider(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const margin = 24;
+    const slBarW = canvas.clientWidth - margin * 2;
+    currentScore = Math.max(0, Math.min(1, (mx - margin) / slBarW));
+    draw();
+  }
+
+  // Buttons
+  document.getElementById('al-normal-btn').addEventListener('click', () => {
+    addScore(0.05 + Math.random() * 0.10);
+  });
+  document.getElementById('al-spike-btn').addEventListener('click', () => {
+    // Add Wp consecutive scores at current level to fill the short-term window
+    for (let i = 0; i < Wp; i++) addScore(currentScore + Math.random() * 0.02);
+  });
+  document.getElementById('al-drift-btn').addEventListener('click', () => {
+    const base = scores.length > 0 ? scores[scores.length-1] : 0.1;
+    for (let i = 0; i < 10; i++) addScore(base + (i+1) * 0.03 + Math.random() * 0.02);
+  });
+  document.getElementById('al-reset-btn').addEventListener('click', reset);
+
+  reset();
+  window.addEventListener('resize', draw);
+})();
+</script>
+</body>
+</html>
